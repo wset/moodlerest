@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Dynamic;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Net;
@@ -18,9 +20,18 @@ using System.Collections.Specialized;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Reflection;
+using otrsrest;
+using System.Security.Cryptography;
 
 namespace moodlerest
 {
+    public static class otrssettings
+    {
+        public static string customer { get; set; }
+        public static string errqueue { get; set; }
+        public static string dupqueue { get; set; }
+    }
+
     public class user
     {
         // Object to hold user data.
@@ -47,9 +58,9 @@ namespace moodlerest
 
         public string email
         {
-            get 
+            get
             {
-                return _email.ToString();
+                return _email;
             }
             set
             {
@@ -57,30 +68,104 @@ namespace moodlerest
             }
         }
 
-        public bool Equals(user p)
+        public user()
         {
-            // If parameter is null return false;
-            if((object) p == null)
+            // Set preference defaults.
+            generate_password = true;
+            force_password_change = true;
+        }
+
+    }
+
+
+    public static class UpdateSettings
+    {
+        public static bool Update(string _name, string _value)
+        {
+            // Function to te stored login details for the Moodle connector.
+
+            if (_name == "MoodleToken")
+            {
+                // Encode tokens for storage
+                byte[] unenc = Encoding.Unicode.GetBytes(_value);
+
+                // Generate additional entropy (will be used as the Initialization vector)
+                byte[] entropy = new byte[20];
+                using (RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider())
+                {
+                    rng.GetBytes(entropy);
+                }
+
+                byte[] enc = ProtectedData.Protect(unenc, entropy, DataProtectionScope.CurrentUser);
+
+                Properties.moodlerest.Default.MoodleToken = System.Convert.ToBase64String(enc);
+                Properties.moodlerest.Default.MEntropy = System.Convert.ToBase64String(entropy);
+                Properties.moodlerest.Default.Save();
+                return true;
+            }
+            else if (_name == "GeoPass")
+            {
+                // Encode passwords for storage
+                byte[] unenc = Encoding.Unicode.GetBytes(_value);
+
+                // Generate additional entropy (will be used as the Initialization vector)
+                byte[] entropy = new byte[20];
+                using (RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider())
+                {
+                    rng.GetBytes(entropy);
+                }
+
+                byte[] enc = ProtectedData.Protect(unenc, entropy, DataProtectionScope.CurrentUser);
+
+                Properties.moodlerest.Default.GeoPass = System.Convert.ToBase64String(enc);
+                Properties.moodlerest.Default.GEntropy = System.Convert.ToBase64String(entropy);
+                Properties.moodlerest.Default.Save();
+                return true;
+            }
+            else if (_name == "DBPass")
+            {
+                // Encode passwords for storage
+                byte[] unenc = Encoding.Unicode.GetBytes(_value);
+
+                // Generate additional entropy (will be used as the Initialization vector)
+                byte[] entropy = new byte[20];
+                using (RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider())
+                {
+                    rng.GetBytes(entropy);
+                }
+
+                byte[] enc = ProtectedData.Protect(unenc, entropy, DataProtectionScope.CurrentUser);
+
+                Properties.moodlerest.Default.DBPass = System.Convert.ToBase64String(enc);
+                Properties.moodlerest.Default.DBEntropy = System.Convert.ToBase64String(entropy);
+                Properties.moodlerest.Default.Save();
+                return true;
+            }
+            else if (_name != "GEntropy" && _name != "MEntropy" && _name != "DBEntropy" && Properties.moodlerest.Default[_name] != null)
+            {
+                // If setting exists update it.
+                Properties.moodlerest.Default[_name] = _value;
+                Properties.moodlerest.Default.Save();
+                return true;
+            }
+            else
             {
                 return false;
             }
+        }
 
-            // return true if the fields match
-            bool match = true;
-
-            foreach(PropertyInfo property in typeof(user).GetProperties())
+        public static string Get(string _name)
+        {
+            if (_name != "MoodleToken" && _name != "MEntropy" && _name != "GeoPass" && _name != "GEntropy" && _name != "DBPass" && _name != "DBEntropy" && Properties.moodlerest.Default[_name] != null)
             {
-                if (property.GetValue(this) != property.GetValue(p))
-                {
-                    match = false;
-                    break;
-                }
+                return Properties.moodlerest.Default[_name].ToString();
             }
-
-            return match;
+            else
+            {
+                return "";
+            }
         }
     }
-
 
     public class lkcriteria
     {
@@ -104,6 +189,67 @@ namespace moodlerest
         }
     }
 
+    public class muser
+    {
+        public string id { get; set; }
+        public string username { get; set; }
+        public string firstname { get; set; }
+        public string lastname { get; set; }
+        public string middlename { get; set; }
+        public string idnumber { get; set; }
+        public string email { get; set; }
+        public string candidate_number { get; set; }
+        public string sapcustomernumber { get; set; }
+        public string sapsuppliernumber { get; set; }
+    }
+
+    public class EmailCheck
+    {
+        // Check strings are valid email addresses.
+
+        private bool invalid;
+
+        public EmailCheck()
+        {
+            invalid = false;
+        }
+
+        public bool IsValidEmail(string strIn)
+        {
+            invalid = false;
+            if (String.IsNullOrEmpty(strIn))
+                return false;
+
+            // Use IdnMapping class to convert Unicode domain names.
+            strIn = Regex.Replace(strIn, @"(@)(.+)$", this.DomainMapper);
+            if (invalid)
+                return false;
+
+            // Return true if strIn is in valid e-mail format. 
+            return Regex.IsMatch(strIn,
+                   @"^(?("")(""[^""]+?""@)|(([-!#\$%&'\*\+/=\?\^`\{\}\|~\w]((\.(?!\.))|[-!#\$%&'\*\+/=\?\^`\{\}\|~\w])*)(?<=[-!#\$%&'\*\+/=\?\^`\{\}\|~\w])@))" +
+                   @"(?(\[)(\[(\d{1,3}\.){3}\d{1,3}\])|(([0-9a-z][-\w]*[0-9a-z]*\.)+[a-z0-9]{2,17}))$",
+                   RegexOptions.IgnoreCase);
+        }
+
+        private string DomainMapper(Match match)
+        {
+            // IdnMapping class with default property values.
+            IdnMapping idn = new IdnMapping();
+
+            string domainName = match.Groups[2].Value;
+            try
+            {
+                domainName = idn.GetAscii(domainName);
+            }
+            catch (ArgumentException)
+            {
+                invalid = true;
+            }
+            return match.Groups[1].Value + domainName;
+        }
+    }
+
     public class CheckForUser
     {
         // Class to check if a user already exists
@@ -111,6 +257,8 @@ namespace moodlerest
         public Dictionary<user, JToken> duplicates { get; set; } // Dictionary of users that appear to be duplicates (including error JTokens)
         public Dictionary<user, String> existingusers { get; set; } // Dictionary of users that already exist (to lookup ids)
         public List<user> newusers { get; set; }  // List of users that are not currently on system (to be added)
+        public OCWebRequest moodle { get; set; }
+        private IEnumerable<muser> musers;
 
         public CheckForUser()
         {
@@ -119,276 +267,190 @@ namespace moodlerest
             duplicates = new Dictionary<user, JToken>();
             existingusers = new Dictionary<user, string>();
             newusers = new List<user>();
+            moodle = new OCWebRequest();
+            Console.WriteLine("Getting Moodle Users");
+            DataTable rawmusers = GetUsers.MoodleODBC("SELECT id, username, idnumber, email, firstname, middlename, lastname FROM mdl_user WHERE deleted = 0");
+            DataTable cfields = GetUsers.MoodleODBC("SELECT mdl_user_info_field.shortname, mdl_user_info_data.userid, mdl_user_info_data.data FROM mdl_user_info_field INNER JOIN mdl_user_info_data ON mdl_user_info_field.id = mdl_user_info_data.fieldid WHERE mdl_user_info_field.shortname='SAPC' OR mdl_user_info_field.shortname='SAPS' OR mdl_user_info_field.shortname='candno'");
+
+            musers = from u in rawmusers.AsEnumerable()
+                     join cf1 in cfields.AsEnumerable().Where(t => t["shortname"].ToString() == "candno") on u["id"].ToString() equals cf1["userid"].ToString() into candnos
+                     from cn in candnos.DefaultIfEmpty()
+                     join cf2 in cfields.AsEnumerable().Where(s => s["shortname"].ToString() == "SAPC") on u["id"].ToString() equals cf2["userid"].ToString() into sapcs
+                     from sapc in sapcs.DefaultIfEmpty()
+                     join cf3 in cfields.AsEnumerable().Where(u => u["shortname"].ToString() == "SAPS") on u["id"].ToString() equals cf3["userid"].ToString() into sapss
+                     from saps in sapss.DefaultIfEmpty()
+                     select new muser { id = u["id"].ToString(), username = u["username"].ToString(), firstname = u["firstname"].ToString(), middlename = u["middlename"].ToString(), lastname = u["lastname"].ToString(), idnumber = u["idnumber"].ToString(), email = u["email"].ToString(), candidate_number = (cn == null ? String.Empty : cn["data"].ToString()), sapcustomernumber = (sapc == null ? String.Empty : sapc["data"].ToString()), sapsuppliernumber = (saps == null ? String.Empty : saps["data"].ToString()) };
+
+            Console.WriteLine("Users Found: " + musers.Count());
+
         }
 
-        public async Task<string> ExistingCheck(OCWebRequest moodle, user checkuser) 
+
+
+        public async Task<string> ExistingCheck(user checkuser)
         {
-            lkupidnumber userlookup;
-            JObject jsonresponse;
             string id = "";
-            JArray matchedusers = new JArray();
+            IEnumerable<muser> matchedusers = null;
             JArray errors = new JArray();
-            List<string> usernames = new List<string>();
+            MailAddress testemail;
+            bool dup = false;
+            List<string> where = new List<string>();
 
+            testemail = null;
 
-            if( !String.IsNullOrWhiteSpace(checkuser.candidate_number) )
+            EmailCheck checkemail = new EmailCheck();
+
+            if (checkemail.IsValidEmail(checkuser.email))
             {
-                // Check to see if candidate number already exists as idnumber.
-                userlookup = new lkupidnumber();
-                userlookup.criteria.Add(new lkcriteria() { key = "idnumber", value = checkuser.candidate_number });
-
-                await moodle.Send(userlookup);
-                jsonresponse = new JObject();
-
-                jsonresponse = JObject.Parse(moodle.response);
-                if (jsonresponse["users"] != null && jsonresponse["users"].HasValues)
+                // if email is of correct format
+                try
                 {
-                    // There's a user with that id, so save it for later.
-                    matchedusers = jsonresponse["users"] as JArray;
+                    testemail = new MailAddress(checkuser.email);
                 }
-
-                // Check to see if candidate number already exists.
-                userlookup = new lkupidnumber();
-                userlookup.criteria.Add(new lkcriteria() {key = "profile_field_candno", value = checkuser.candidate_number });
-
-                await moodle.Send(userlookup);
-                jsonresponse = new JObject();
-
-                jsonresponse = JObject.Parse(moodle.response);
-                if (jsonresponse["users"] != null && jsonresponse["users"].HasValues)
+                catch
                 {
-                    // There's a user with that candidate number, so save it for later.
-                    matchedusers.Merge(jsonresponse["users"], new JsonMergeSettings() { MergeArrayHandling = MergeArrayHandling.Union });
+                    testemail = null;
                 }
             }
 
-            if( !String.IsNullOrWhiteSpace(checkuser.sapcustomernumber) )
+            if (testemail == null || testemail.Address != checkuser.email)
             {
-                // Check to see if sap customer number already exists as idnumber.
-                userlookup = new lkupidnumber();
-                userlookup.criteria.Add(new lkcriteria() { key = "idnumber", value = checkuser.sapcustomernumber });
-
-                await moodle.Send(userlookup);
-                jsonresponse = new JObject();
-
-                jsonresponse = JObject.Parse(moodle.response);
-                if (jsonresponse["users"] != null && jsonresponse["users"].HasValues)
-                {
-                    // There's a user with that ID, so save it for later.
-                    matchedusers.Merge(jsonresponse["users"], new JsonMergeSettings() { MergeArrayHandling = MergeArrayHandling.Union });
-                }
-
-                // Check to see if sap customer number already exists.
-                userlookup = new lkupidnumber();
-                userlookup.criteria.Add(new lkcriteria() {key = "profile_field_sapc", value = checkuser.sapcustomernumber });
-
-                await moodle.Send(userlookup);
-                jsonresponse = new JObject();
-
-                jsonresponse = JObject.Parse(moodle.response);
-                if (jsonresponse["users"] != null && jsonresponse["users"].HasValues)
-                {
-                    // There's a user with the SAP Customer number, so save it for later.
-                    matchedusers.Merge(jsonresponse["users"], new JsonMergeSettings() { MergeArrayHandling = MergeArrayHandling.Union });
-                }
+                // Email is invalid.
+                dup = true;
+                errors.Add(JObject.FromObject(new Dictionary<String, String>() { { "error", "Invalid Email Address" }, { "email", checkuser.email } }));
             }
-
-            if( !String.IsNullOrWhiteSpace(checkuser.sapsuppliernumber) )
-            {
-                // Check to see if sap supplier number already exists as idnumber.
-                userlookup = new lkupidnumber();
-                userlookup.criteria.Add(new lkcriteria() { key = "idnumber", value = checkuser.sapsuppliernumber });
-
-                await moodle.Send(userlookup);
-                jsonresponse = new JObject();
-
-                jsonresponse = JObject.Parse(moodle.response);
-                if (jsonresponse["users"] != null && jsonresponse["users"].HasValues)
-                {
-                    // There's a user with that ID, so save it for later.
-                    matchedusers.Merge(jsonresponse["users"], new JsonMergeSettings() { MergeArrayHandling = MergeArrayHandling.Union });
-                }
-
-                // Check to see if sap supplier number already exists.
-                userlookup = new lkupidnumber();
-                userlookup.criteria.Add(new lkcriteria() {key = "profile_field_saps", value = checkuser.sapsuppliernumber });
-
-                await moodle.Send(userlookup);
-                jsonresponse = new JObject();
-
-                jsonresponse = JObject.Parse(moodle.response);
-                if (jsonresponse["users"] != null && jsonresponse["users"].HasValues)
-                {
-                    // There's a user with that SAP Supplier number, so save it for later.
-                    matchedusers.Merge(jsonresponse["users"], new JsonMergeSettings() { MergeArrayHandling = MergeArrayHandling.Union });
-                }
-            }
-
-            // Set merge settings so we can merge multiple errors.
-            JsonMergeSettings mergeset = new JsonMergeSettings() { MergeArrayHandling = MergeArrayHandling.Union };
-
-            if (!String.IsNullOrWhiteSpace(checkuser.email))
+            else
             {
                 // Check to see if email already exists.
-                userlookup = new lkupidnumber();
-                userlookup.criteria.Add(new lkcriteria() { key = "email", value = checkuser.email });
-
-                await moodle.Send(userlookup);
-
-                jsonresponse = new JObject();
-
-                jsonresponse = JObject.Parse(moodle.response);
-
-                if (jsonresponse["users"] != null && jsonresponse["users"].HasValues)
-                {
-                    // There's a user with that email, so save it for later.
-                    matchedusers.Merge(jsonresponse["users"], mergeset);
-                }
+                where.Add("email.ToLower() == \"" + checkuser.email.ToLower() + "\"");
             }
 
-            if( matchedusers.HasValues )
+            if (!String.IsNullOrWhiteSpace(checkuser.candidate_number))
+            {
+                // Check to see if candidate number already exists as idnumber.
+
+                where.Add("idnumber == \"" + checkuser.candidate_number + "\"");
+                where.Add("candidate_number == \"" + checkuser.candidate_number + "\"");
+            }
+
+            if (!String.IsNullOrWhiteSpace(checkuser.sapcustomernumber))
+            {
+                // Check to see if sap customer number already exists as idnumber.
+
+                where.Add("idnumber == \"" + checkuser.sapcustomernumber + "\"");
+                where.Add("sapcustomernumber == \"" + checkuser.sapcustomernumber + "\"");
+            }
+
+            if (!String.IsNullOrWhiteSpace(checkuser.sapsuppliernumber))
+            {
+                // Check to see if sap supplier number already exists as idnumber.
+
+                where.Add("idnumber == \"" + checkuser.sapsuppliernumber + "\"");
+                where.Add("sapsuppliernumber == \"" + checkuser.sapsuppliernumber + "\"");
+            }
+
+            string criteria = String.Join(" || ", where);
+            matchedusers = musers.Where(criteria);
+
+            if (matchedusers.Count() > 0)
             {
                 // There are existing users that match the current user, so check to see if they're the same person.
 
-                bool dup = false;
-                foreach( JToken match in matchedusers.Children())
+
+                // Get distinct record numbers
+                IEnumerable<string> candnos = matchedusers.Where(t => !String.IsNullOrWhiteSpace(t.candidate_number)).Select(s => s.candidate_number).Distinct();
+                IEnumerable<string> sapcs = matchedusers.Where(t => !String.IsNullOrWhiteSpace(t.sapcustomernumber)).Select(s => s.sapcustomernumber).Distinct();
+                IEnumerable<string> sapss = matchedusers.Where(t => !String.IsNullOrWhiteSpace(t.sapsuppliernumber)).Select(s => s.sapsuppliernumber).Distinct();
+
+                int nocandnos = candnos.Count();
+                int nosapcs = sapcs.Count();
+                int nosapss = sapss.Count();
+
+                if ((nocandnos == 0 || String.IsNullOrWhiteSpace(checkuser.candidate_number)) && (nosapcs == 0 || String.IsNullOrWhiteSpace(checkuser.sapcustomernumber)) && (nosapss == 0 || String.IsNullOrWhiteSpace(checkuser.sapsuppliernumber)))
                 {
-                    bool cfieldmatch = false;
+                    // no corresponding cfields, so must match by idnumber or email only.  If so treat as duplicate for manual checking.
+                    dup = true;
+                    errors.Add(JObject.FromObject(new Dictionary<String, String>() { { "error", "User with matching email address but no Candidate or SAP numbers to verify" } }));
+                }
 
-                    if( match["customfields"] != null && match["customfields"].HasValues )
+                if (nocandnos > 1 || (!String.IsNullOrWhiteSpace(checkuser.candidate_number) && nocandnos > 0 && candnos.First() != checkuser.candidate_number))
+                {
+                    // We have candidate number mismatches, so raise an error.
+                    dup = true;
+                    errors.Add(JObject.FromObject(new Dictionary<String, JToken>() { { "error", JToken.FromObject("Candidate Number mismatch(s)") }, { "New Candidate No", checkuser.candidate_number }, { "Existing Candidate Nos", JToken.FromObject(candnos.Distinct()) } }));
+                }
+
+                if (nosapcs > 1 || (!String.IsNullOrWhiteSpace(checkuser.sapcustomernumber) && nosapcs > 0 && sapcs.First() != checkuser.sapcustomernumber))
+                {
+                    // We have SAP Customer mismatches, so check candidate numbers.
+                    IEnumerable<muser> sapcandnos = null;
+
+                    if (!String.IsNullOrWhiteSpace(checkuser.candidate_number))
                     {
-                        // Check custom fields to check for clashes.
-                        List<string> candnos = new List<string>();
-                        List<string> sapcs = new List<string>();
-                        List<string> sapss = new List<string>();
-
-                        foreach(JToken cfield in match["customfields"].Children()) {
-                            if (cfield["shortname"].ToString() == "candno" && !String.IsNullOrWhiteSpace(checkuser.candidate_number))
-                            {
-                                if(checkuser.candidate_number != cfield["value"].ToString())
-                                {
-                                    // Candidate number mismatch!  We have a duplicate.
-                                    dup = true;
-                                    candnos.Add(cfield["value"].ToString());
-                                    break;
-                                }
-                                else
-                                {
-                                    // Candidate number exists and matches, so note that we have an ID match.
-                                    cfieldmatch = true;
-                                }
-                            }
-                            if (cfield["shortname"].ToString() == "sapc" && !String.IsNullOrWhiteSpace(checkuser.sapcustomernumber))
-                            {
-                                if(checkuser.sapcustomernumber != cfield["value"].ToString())
-                                {
-                                    // SAP Customer mismatch! We have a duplicate.
-                                    dup = true;
-                                    sapcs.Add(cfield["value"].ToString());
-                                    break;                            
-                                }
-                                else
-                                {
-                                    // SAP Customer exists and matches, so note that we have an ID match.
-                                    cfieldmatch = true;
-                                }
-                            }
-                            if (cfield["shortname"].ToString() == "saps" && !String.IsNullOrWhiteSpace(checkuser.sapsuppliernumber))
-                            {
-                                if(checkuser.sapsuppliernumber != cfield["value"].ToString())
-                                {
-                                    // SAP Supplier mismatch! We have a duplicate.
-                                    dup = true;
-                                    sapss.Add(cfield["value"].ToString());
-                                    break;
-                                }
-                                else
-                                {
-                                    // SAP Supplier exists and matches, so note that we have an ID match.
-                                    cfieldmatch = true;
-                                }
-                            }
-                        }
-                        if(candnos.Count > 0)
-                        {
-                            // We have candidate number mismatches, so raise an error.
-                            candnos.Add(checkuser.candidate_number);
-                            errors.Add(JObject.FromObject(new Dictionary<String, JToken>() {{"error", JToken.FromObject("Candidate Number mismatch(s)")}, {"Candidate Nos", JToken.FromObject(candnos)}}));
-                        }
-                        if(sapcs.Count > 0)
-                        {
-                            // We have SAP Customer mismatches, so raise an error.
-                            sapcs.Add(checkuser.sapcustomernumber);
-                            errors.Add(JObject.FromObject(new Dictionary<String, JToken>() {{"error", JToken.FromObject("SAP Customer Number mismatch(s)")}, {"SAP Nos", JToken.FromObject(sapcs)}}));
-                        }
-                        if(sapss.Count > 0)
-                        {
-                            // We have SAP Supplier mismatches, so raise an error.
-                            sapss.Add(checkuser.sapsuppliernumber);
-                            errors.Add(JObject.FromObject(new Dictionary<String, JToken>() {{"error", JToken.FromObject("SAP Supplier Number mismatch(s)")}, {"SAP Nos", JToken.FromObject(sapss)}}));
-                        }
+                        // We have a candidate number, so check if any of the SAP Customers don't correspond to this.
+                        sapcandnos = matchedusers.Where(t => !String.IsNullOrWhiteSpace(t.sapcustomernumber) && t.candidate_number != checkuser.candidate_number);
                     }
-
-                    if( cfieldmatch == false )
+                    if (String.IsNullOrWhiteSpace(checkuser.candidate_number) || sapcandnos.Count() > 0 )
                     {
-                        // no corresponding cfields, so must match by idnumber or email only.  If so treat as duplicate for manual checking.
                         dup = true;
-                        errors.Add(JObject.FromObject(new Dictionary<string, String> () {{"error","User with matching email address but no Candidate or SAP numbers to verify"},{"user",match["username"].ToString()}}));
-                    }
-
-                    if (!usernames.Contains(match["username"].ToString()))
-                    {
-                        // Note all matching usernames, so we can see how many matches we have.
-                        usernames.Add(match["username"].ToString());
+                        errors.Add(JObject.FromObject(new Dictionary<String, JToken>() { { "error", JToken.FromObject("SAP Customer Number mismatch(s)") }, { "New SAP Customer", checkuser.sapcustomernumber }, { "Existing SAP Customers", JToken.FromObject(sapcs.Distinct()) } }));
                     }
                 }
-                
-                if(usernames.Count == 0)
+
+                if (nosapss > 1 || (!String.IsNullOrWhiteSpace(checkuser.sapsuppliernumber) && nosapss > 0 && sapss.First() != checkuser.sapsuppliernumber))
+                {
+                    // We have SAP Supplier mismatches, so check candidate numbers.
+                    IEnumerable<muser> sapcandnos = null;
+
+                    if (!String.IsNullOrWhiteSpace(checkuser.candidate_number))
+                    {
+                        // We have a candidate number, so check if any of the SAP Suppliers don't corresponde to this.
+                        sapcandnos = matchedusers.Where(t => !String.IsNullOrWhiteSpace(t.sapsuppliernumber) && t.candidate_number != checkuser.candidate_number);
+                    }
+                    if (String.IsNullOrWhiteSpace(checkuser.candidate_number) || sapcandnos.Count() > 0)
+                    {
+                        dup = true;
+                        errors.Add(JObject.FromObject(new Dictionary<String, JToken>() { { "error", JToken.FromObject("SAP Supplier Number mismatch(s)") }, { "New SAP Supplier", checkuser.sapsuppliernumber }, { "Existing SAP Suppliers", JToken.FromObject(sapss.Distinct()) } }));
+                    }
+                }
+
+                IEnumerable<string> usernames = matchedusers.Select(s => s.username).Distinct();
+                int nounames = usernames.Count();
+
+                if (nounames == 0)
                 {
                     // Something has gone wrong.  Report as duplicate for investigation;
 
-                    errors.Add(JObject.FromObject(new Dictionary<string, string>() {{"error","Match found, but couldn't retrieve username"}}));
+                    errors.Add(JObject.FromObject(new Dictionary<string, string>() { { "error", "Match found, but couldn't retrieve username" } }));
                     dup = true;
                 }
-                else if(usernames.Count == 1)
+                else if (nounames == 1)
                 {
                     // Exactly one matching username found.
 
-                    if( dup == false ) {
+                    if (dup == false)
+                    {
                         // No other issues found.
-                        if (matchedusers.First()["id"] != null)
+                        if (matchedusers.First().id != null)
                         {
                             // Add as an existing user.
-                            id = matchedusers.First()["id"].ToString();
+                            id = matchedusers.First().id;
                             existingusers.Add(checkuser, id);
                         }
                         else
                         {
-                            // Can't get ID from JSON string, so return as duplicate for further investigation.
+                            // Can't get ID from query string, so return as duplicate for further investigation.
                             dup = true;
-                            errors.Add(JObject.FromObject(new Dictionary<string, string>() {{ "error", "Cannot retrieve ID of user"}}));
+                            errors.Add(JObject.FromObject(new Dictionary<string, string>() { { "error", "Cannot retrieve ID of user" } }));
                         }
                     }
                 }
                 else
                 {
-                     // Multiple matching usernames found.  Return as duplicates for further investigation.
+                    // Multiple matching usernames found.  Return as duplicates for further investigation.
 
-                     errors.Add(JObject.FromObject(new Dictionary<string, JToken>() { { "error", JToken.FromObject("Multiple matching users") }, { "users", JToken.FromObject(usernames) } }));
-                     dup = true;
-                }
-
-                if( dup )
-                {
-                    // We have duplicates, add to duplicates object.
-
-                    JObject duprets = new JObject();
-                    duprets["errors"] = errors;
-                    JObject checkuserjson = JObject.FromObject(checkuser);
-                    checkuserjson.Property("password").Remove();
-                    duprets["user to add"] = checkuserjson;
-                    duprets["matching existing users"] = matchedusers;
-                    duplicates.Add(checkuser, duprets);
+                    errors.Add(JObject.FromObject(new Dictionary<string, JToken>() { { "error", JToken.FromObject("Multiple matching users") }, { "users", JToken.FromObject(usernames) } }));
+                    dup = true;
                 }
             }
             else
@@ -397,8 +459,69 @@ namespace moodlerest
                 newusers.Add(checkuser);
             }
 
-            // Return the id if we were able to find a match, otherwise nothing if duplicate or new user.
-            return id;
+            if (dup)
+            {
+                // We have duplicates, add to duplicates object.
+                if (duplicates.ContainsKey(checkuser))
+                {
+                    JArray duperrs = JArray.FromObject(duplicates[checkuser]["errors"]);
+                    duperrs.Merge(errors);
+                    duplicates[checkuser]["errors"] = duperrs;
+                }
+                else
+                {
+                    JObject duprets = new JObject();
+                    duprets["errors"] = errors;
+                    JObject checkuserjson = JObject.FromObject(checkuser);
+                    checkuserjson.Property("password").Remove();
+                    duprets["user to add"] = checkuserjson;
+                    if (matchedusers != null)
+                    {
+                        duprets["matching existing users"] = JArray.FromObject(matchedusers);
+                    }
+                    duplicates.Add(checkuser, duprets);
+                }
+                string usermatch = checkuser.firstname + " " + checkuser.middlename + " " + checkuser.lastname;
+                List<string> userids = new List<string>();
+                if (!string.IsNullOrWhiteSpace(checkuser.candidate_number))
+                {
+                    if (!userids.Contains(checkuser.candidate_number))
+                    {
+                        userids.Add(checkuser.candidate_number);
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(checkuser.sapcustomernumber))
+                {
+                    if (!userids.Contains(checkuser.sapcustomernumber))
+                    {
+                        userids.Add(checkuser.sapcustomernumber);
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(checkuser.sapsuppliernumber))
+                {
+                    if (!userids.Contains(checkuser.sapsuppliernumber))
+                    {
+                        userids.Add(checkuser.sapsuppliernumber);
+                    }
+                }
+                string useridstring = String.Join("/", userids);
+                if (!string.IsNullOrWhiteSpace(useridstring))
+                {
+                    usermatch += " (" + useridstring + ")";
+                }
+                Console.WriteLine();
+                Console.WriteLine("Duplicate User Found: " + usermatch);
+                Console.WriteLine(JArray.FromObject(errors).ToString());
+                Console.Write("Checking Existing Enrolments");
+
+                return null;
+            }
+            else
+            {
+
+                // Return the id if we were able to find a match, otherwise nothing if duplicate or new user.
+                return id;
+            }
         }
     }
 
@@ -424,17 +547,18 @@ namespace moodlerest
                 try
                 {
                     adapter = new OdbcDataAdapter(query, connection);
+                    // Pull data into dataset
+                    adapter.Fill(data);
                     break;
                 }
                 catch(Exception)
                 {
                     retries++;
+                    Console.WriteLine("Connection error");
                     if (retries > 2) throw;
+                    Console.WriteLine("Retry " + retries);
                 }
             }
-
-            // Pull data into dataset.
-            adapter.Fill(data);
 
             return data;
         }
@@ -456,69 +580,97 @@ namespace moodlerest
                 try
                 {
                     adapter = new SqlDataAdapter(query, connection);
+                    // Pull data into dataset
+                    adapter.Fill(data);
                     break;
                 }
                 catch(Exception)
                 {
                     retries++;
+                    Console.WriteLine("Connection error");
                     if (retries > 2) throw;
+                    Console.WriteLine("Retry " + retries);
                 }
             }
 
-            // Pull data into dataset.
-            adapter.Fill(data);
-
             return data;
+        }
+
+        public static DataTable MoodleODBC(string query)
+        {
+            string username = Properties.moodlerest.Default.DBUser;
+            string password = "";
+            if (!string.IsNullOrWhiteSpace(Properties.moodlerest.Default.DBPass))
+            {
+                byte[] enc = System.Convert.FromBase64String(Properties.moodlerest.Default.DBPass);
+                byte[] entropy = System.Convert.FromBase64String(Properties.moodlerest.Default.DBEntropy);
+                byte[] unenc = ProtectedData.Unprotect(enc, entropy, DataProtectionScope.CurrentUser);
+                password = Encoding.Unicode.GetString(unenc);
+            }
+            string server = Properties.moodlerest.Default.DBServer;
+            string database = Properties.moodlerest.Default.Database;
+            string port = Properties.moodlerest.Default.DBPort;
+
+            // Setup connection using provided details.
+            string connectionstring = "Driver={MySQL ODBC 5.3 Unicode Driver}; Server=" + server + "; Port=" + port + "; Database=" + database + "; Uid=" + username + "; Pwd=" + password;
+
+            return ODBC(connectionstring, query);
         }
 
     }
 
     public static class ProcessData
     {
-        public static List<Enrolment> Enrolments(DataTable data, Dictionary<string,string> fieldmappings)
+        public static List<Enrolment> Enrolments(DataTable data, string id, Dictionary<string,string> fieldmappings)
         {
             List<Enrolment> Enrols = new List<Enrolment>();
-            Dictionary<user, Dictionary<string, bool>> cohorts = new Dictionary<user, Dictionary<string,bool>>();
-            Dictionary<user, Dictionary<string, courseenrol>> courses = new Dictionary<user, Dictionary<string, courseenrol>>();
+            Dictionary<string,user> users = new Dictionary <string,user>();
+            Dictionary<string, Dictionary<string, bool>> cohorts = new Dictionary<string, Dictionary<string,bool>>();
+            Dictionary<string, Dictionary<string, courseenrol>> courses = new Dictionary<string, Dictionary<string, courseenrol>>();
 
             foreach (DataRow row in data.Rows)
             {
-                // Cycle through all data;
-                user newuser = new user();
-
-                foreach (PropertyInfo propertyinfo in newuser.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
+                if (!users.ContainsKey(row[id].ToString()))
                 {
-                    // Check which user fields exist in data and transfer to user object.
+                    // Add user to Dictionary if not already present
+                    user newuser = new user();
 
-                    if (fieldmappings.ContainsKey(propertyinfo.Name))
+                    foreach (PropertyInfo propertyinfo in newuser.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance))
                     {
-                        if (data.Columns.Contains(fieldmappings[propertyinfo.Name]))
+                        // Check which user fields exist in data and transfer to user object.
+
+                        if (fieldmappings.ContainsKey(propertyinfo.Name))
                         {
-                            if(propertyinfo.GetType() == typeof(string))
+                            if (data.Columns.Contains(fieldmappings[propertyinfo.Name]))
                             {
-                                propertyinfo.SetValue(newuser, row[fieldmappings[propertyinfo.Name]].ToString());
+                                if (propertyinfo.PropertyType == typeof(string))
+                                {
+                                    propertyinfo.SetValue(newuser, row[fieldmappings[propertyinfo.Name]].ToString());
+                                }
+                                else if (propertyinfo.PropertyType == typeof(bool))
+                                {
+                                    bool value = true; // default to true (generate password, force change, etc)
+                                    bool.TryParse(row[fieldmappings[propertyinfo.Name]].ToString(), out value);
+                                    propertyinfo.SetValue(newuser, value);
+                                }
                             }
-                            else if (propertyinfo.GetType() == typeof(bool))
+                        }
+                        else if (data.Columns.Contains(propertyinfo.Name))
+                        {
+                            if (propertyinfo.PropertyType == typeof(string))
+                            {
+                                propertyinfo.SetValue(newuser, row[propertyinfo.Name].ToString());
+                            }
+                            else if (propertyinfo.PropertyType == typeof(bool))
                             {
                                 bool value = true; // default to true (generate password, force change, etc)
-                                bool.TryParse(row[fieldmappings[propertyinfo.Name]].ToString(), out value);
+                                bool.TryParse(row[propertyinfo.Name].ToString(), out value);
                                 propertyinfo.SetValue(newuser, value);
                             }
                         }
                     }
-                    else if (data.Columns.Contains(propertyinfo.Name))
-                    {
-                        if(propertyinfo.GetType() == typeof(string))
-                        {
-                            propertyinfo.SetValue(newuser, row[propertyinfo.Name].ToString());
-                        }
-                        else if (propertyinfo.GetType() == typeof(bool))
-                        {
-                            bool value = true; // default to true (generate password, force change, etc)
-                            bool.TryParse(row[propertyinfo.Name].ToString(), out value);
-                            propertyinfo.SetValue(newuser, value);
-                        }
-                    }
+
+                    users.Add(row[id].ToString(), newuser);
                 }
 
                 // Check for cohort enrolments
@@ -557,23 +709,29 @@ namespace moodlerest
 
                 if(!string.IsNullOrWhiteSpace(newcohort))
                 {
-                    if(cohorts.ContainsKey(newuser))
+                    if (cohorts.ContainsKey(row[id].ToString()))
                     {
                         // User already has cohorts.
-                    
-                        if(cohorts[newuser].ContainsKey(newcohort))
+
+                        if (cohorts[row[id].ToString()].ContainsKey(newcohort))
                         {
                             // User already has a record for this cohort.
-                            if(cohorts[newuser][newcohort])
+                            if (cohorts[row[id].ToString()][newcohort])
                             {
                                 // Current record is marked as deleted, so replace with this one.
-                                cohorts[newuser][newcohort] = newchdelete;
+                                cohorts[row[id].ToString()][newcohort] = newchdelete;
                             }
                         }
                         else {
                             // User doesn't have current record, so add it.
-                            cohorts[newuser].Add(newcohort, newchdelete);
+                            cohorts[row[id].ToString()].Add(newcohort, newchdelete);
                         }
+                    }
+                    else
+                    {
+                        // user doesn't currently have any cohorts, so add them.
+
+                        cohorts.Add(row[id].ToString(), new Dictionary<string, bool> { { newcohort, newchdelete } });
                     }
                 }
                 
@@ -620,22 +778,26 @@ namespace moodlerest
 
                 if(!string.IsNullOrWhiteSpace(newcourse))
                 {
-                    if(courses.ContainsKey(newuser)) {
+                    if (courses.ContainsKey(row[id].ToString()))
+                    {
                         // user already has courses to add.
 
-                        if(courses[newuser].ContainsKey(newcourse)) {
+                        if (courses[row[id].ToString()].ContainsKey(newcourse))
+                        {
                             // user already has roles in this course to add.
 
-                            if(courses[newuser][newcourse].roles.ContainsKey(newrole.ToString())) {
+                            if (courses[row[id].ToString()][newcourse].roles.ContainsKey(newrole.ToString()))
+                            {
                                 // user already has this role in this course.
-                                if(courses[newuser][newcourse].roles[newrole.ToString()]) {
+                                if (courses[row[id].ToString()][newcourse].roles[newrole.ToString()])
+                                {
                                     // if current value is deleted, replace with this one, otherwise leave as is
-                                    courses[newuser][newcourse].roles[newrole.ToString()] = newrdelete;
+                                    courses[row[id].ToString()][newcourse].roles[newrole.ToString()] = newrdelete;
                                 }
                             }
                             else {
                                 // user doesn't have this role, so add it
-                                courses[newuser][newcourse].roles.Add(newrole.ToString(), newrdelete);
+                                courses[row[id].ToString()][newcourse].roles.Add(newrole.ToString(), newrdelete);
                             }
                         }
                         else {
@@ -644,7 +806,7 @@ namespace moodlerest
  
                             myenrol.roles.Add(newrole.ToString(), newrdelete);
 
-                            courses[newuser].Add(newcourse, myenrol);
+                            courses[row[id].ToString()].Add(newcourse, myenrol);
                         }
                     }
                     else {
@@ -653,27 +815,26 @@ namespace moodlerest
 
                         myenrol.roles.Add(newrole.ToString(), newrdelete);
 
-                        courses.Add(newuser, new Dictionary<string,courseenrol> {{newcourse, myenrol}});
+                        courses.Add(row[id].ToString(), new Dictionary<string, courseenrol> { { newcourse, myenrol } });
                     }
                 }
             
             }
 
-            List<user> newusers = courses.Keys.ToList();
-            newusers.AddRange(cohorts.Keys.Where(p2 => newusers.All(p1 => !p1.Equals(p2))).ToList());
+            List<string> newusers = users.Keys.ToList();
             
 
             // construct Enrolment object
-            foreach( user thisuser in newusers) 
+            foreach( string myid in newusers) 
             {
-                Enrols.Add(new Enrolment {user = thisuser});
+                Enrols.Add(new Enrolment {user = users[myid]});
 
-                if(courses.ContainsKey(thisuser)) {
-                    Enrols.Last().courses = courses[thisuser];
+                if(courses.ContainsKey(myid)) {
+                    Enrols.Last().courses = courses[myid];
                 }
 
-                if(cohorts.ContainsKey(thisuser)) {
-                    Enrols.Last().cohorts = cohorts[thisuser];
+                if(cohorts.ContainsKey(myid)) {
+                    Enrols.Last().cohorts = cohorts[myid];
                 }
             }
 
@@ -688,17 +849,9 @@ namespace moodlerest
         private string wsfunction { get; set; }
         public List<JToken> users { get; set; }
         public Dictionary<user, string> errors { get; set; }
-        public string geouser { get; set; }
-        private string _geopass;
         public OCWebRequest oc { get; set; }
+        private Username usernamegen;
 
-        public string geopass
-        {
-            set
-            {
-                _geopass = value;
-            }
-        }
 
         public CreateUsers()
         {
@@ -706,15 +859,34 @@ namespace moodlerest
             users = new List<JToken>();
             errors = new Dictionary<user, string>();
             oc = new OCWebRequest();
+            usernamegen = new Username();
         }
 
-        public async Task AddUser( user user )
+        public async Task AddUser( user user , string username = "")
         {
             // Add the user in the parameters to the list to add to moodle.
-
+            
             // Generate new username based on first initial and lastname
-            string usernameprefix = user.firstname[0] + user.lastname;
-            string username = await Username.Generate(oc, usernameprefix);  
+            if (String.IsNullOrWhiteSpace(username))
+            {
+                try
+                {
+                    string usernameprefix = user.lastname;
+                    if (!String.IsNullOrWhiteSpace(user.firstname))
+                    {
+                        // If the user has a firstname add first initial to start of username.
+                        usernameprefix = user.firstname[0] + usernameprefix;
+                        
+                    }
+                    username = await usernamegen.Generate(usernameprefix);
+                }
+                catch (HttpRequestException)
+                {
+                    // Unable to pull usernames so add to errors list
+                    errors.Add(user, "Unable to generate username");
+                    return;
+                }
+            }
 
             // Add core user details to list.
             users.Add(JObject.FromObject(new Dictionary<string,string> {{"username", username}, {"firstname", user.firstname}, {"lastname", user.lastname}, {"email", user.email}}));
@@ -727,7 +899,7 @@ namespace moodlerest
             else
             {
                 // If no password, then pass random password string for now and generate a new password on the server instead.
-                users.Last()["password"] = Membership.GeneratePassword(12, 3);
+                users.Last()["password"] = "&a1" + Membership.GeneratePassword(12, 3);
                 user.generate_password = true;
             }
 
@@ -812,26 +984,62 @@ namespace moodlerest
             }
 
             // Lookup timezone based on users location.
-            users.Last()["timezone"] = await timezone.Lookup(user.city, user.country, geouser, _geopass);
+            users.Last()["timezone"] = await timezone.Lookup(user.city, user.country);
+
+            Console.WriteLine("Adding user: " + users.Last()["username"] + " - " + users.Last()["firstname"] + " " + users.Last()["middlename"] + " " + users.Last()["lastname"] + " (" + users.Last()["email"] + ")");
         }
 
-        public async Task AddUser( List<user> users) 
+        public async Task AddUser( List<user> users, string uidfield = "") 
         {
             // Add a list of users to the object to upload.
+            PropertyInfo uidprop = null;
 
-            foreach( user user in users )
+            if (!String.IsNullOrWhiteSpace(uidfield))
             {
-                // For each user add them to the list.
-                await this.AddUser(user);
-            };
+                uidprop = users[0].GetType().GetProperty(uidfield);
+            }
+
+            if (users.Count > 0)
+            {
+                foreach (user user in users)
+                {
+                    // For each user add them to the list.
+                    if (uidprop != null)
+                    {
+                        await this.AddUser(user, uidprop.GetValue(user).ToString());
+                    }
+                    else
+                    {
+                        await this.AddUser(user);
+                    }
+                }
+            }
         }
 
         public async Task Send()
         {
-            // Send the upload object to Moodle.
-            await oc.Send(new Dictionary<string, JToken>() { { "wsfunction", JToken.FromObject(wsfunction) }, { "users", JToken.FromObject(users) } });
+            // Send new users to moodle in batches.
+            int i = 0;
+            int batch = 50;
+            while (i < users.Count)
+            {
+                int j = Math.Min(batch, users.Count-i);
+                await oc.Send(new Dictionary<string, JToken>() { { "wsfunction", JToken.FromObject(wsfunction) }, { "users", JToken.FromObject(users.GetRange(i,j)) } });
+                if (oc.response != null)
+                {
+                    JToken response = JToken.Parse(oc.response);
+                    if (response != null && response.SelectToken("exception") != null)
+                    {
+                        // Error in update try adding individually
+                        for (int k = i; k < i + j; k++)
+                        {
+                            await oc.Send(new Dictionary<string, JToken>() { { "wsfunction", JToken.FromObject(wsfunction) }, { "users", JToken.FromObject(users.GetRange(k, 1)) } });
+                        }
+                    }
+                }
+                i += batch;
+            }
         }
-
     }
 
     public class UpdateUsers
@@ -841,17 +1049,7 @@ namespace moodlerest
         private string wsfunction;
         public List<JToken> users { get; set; }
         public Dictionary<user, string> errors { get; set; }
-        public string geouser { get; set; }
-        private string _geopass;
         public OCWebRequest oc { get; set; }
-
-        public string geopass
-        {
-            set
-            {
-                _geopass = value;
-            }
-        }
 
         public UpdateUsers()
         {
@@ -939,7 +1137,7 @@ namespace moodlerest
             JArray customfields = new JArray();
             if( !String.IsNullOrWhiteSpace(user.candidate_number) )
             {
-                customfields.Add(JObject.FromObject(new Dictionary<string, string> { { "type", "SAPC" }, { "value", user.candidate_number } }));
+                customfields.Add(JObject.FromObject(new Dictionary<string, string> { { "type", "candno" }, { "value", user.candidate_number } }));
                 users.Last()["idnumber"] = user.candidate_number;
             }
             if ( !String.IsNullOrWhiteSpace(user.sapcustomernumber) )
@@ -965,8 +1163,9 @@ namespace moodlerest
             
             // Lookup new timezone only if requested.
             if (updtz) {
-                users.Last()["timezone"] = await timezone.Lookup(user.city, user.country, geouser, _geopass);
+                users.Last()["timezone"] = await timezone.Lookup(user.city, user.country);
             }
+            Console.WriteLine("Updating user: " + users.Last()["username"] + " - " + users.Last()["firstname"] + " " + users.Last()["middlename"] + " " + users.Last()["lastname"] + " (" + users.Last()["email"] + ")");
         }
 
         public async Task AddUser( Dictionary<string, user> users, bool updtz = false) 
@@ -982,8 +1181,27 @@ namespace moodlerest
 
         public async Task Send()
         {
-            // Send updates to moodle.
-            await oc.Send(new Dictionary<string, JToken>() { { "wsfunction", JToken.FromObject(wsfunction) }, { "users", JToken.FromObject(users) } });
+            // Send updates to moodle in batches.
+            int i = 0;
+            int batch = 50;
+            while (i < users.Count)
+            {
+                int j = Math.Min(batch, users.Count-i);
+                await oc.Send(new Dictionary<string, JToken>() { { "wsfunction", JToken.FromObject(wsfunction) }, { "users", JToken.FromObject(users.GetRange(i,j)) } });
+                if (oc.response != null)
+                {
+                    JToken response = JToken.Parse(oc.response);
+                    if (response != null && response.SelectToken("exception") != null)
+                    {
+                        // Error in update try updating individually
+                        for(int k = i; k < i+j ; k++)
+                        {
+                            await oc.Send(new Dictionary<string, JToken>() { { "wsfunction", JToken.FromObject(wsfunction) }, { "users", JToken.FromObject(users.GetRange(k, 1)) } });
+                        }
+                    }
+                }
+                i += batch;
+            }
         }
     }
 
@@ -1043,10 +1261,14 @@ namespace moodlerest
 
         public newcohortenrol()
         {
+            cohorttype = new Dictionary<string,string>();
+            usertype = new Dictionary<string, string>();
+
             cohorttype.Add("type", "id");
             usertype.Add("type", "id");
         }
     }
+
 
     public class EnrolUsers
     {
@@ -1062,27 +1284,30 @@ namespace moodlerest
         private string fnrmroles;
         private CheckForUser usercheck;
         public OCWebRequest oc { get; set; }
-        public string geouser { get; set; }
-        public string geopass { get; set; }
 
         public Dictionary<user,List<newcourseenrol>> newusercourses {get; set;}
         public Dictionary<user, List<newcohortenrol>> newusercohorts { get; set; }
         public List<newcourseenrol> enrols {get; set;}
         public List<newcohortenrol> cenrols { get; set; }
-        public List<newcohortenrol> cremoves { get; set; }
+        public List<Dictionary<string,string>> cremoves { get; set; }
         public List<newroles> addroles {get; set;} 
         public List<newroles> rmroles {get; set;}
+        public List<user> newusers { get; set; }
         public Dictionary<string, user> upduser { get; set; }
         private Dictionary<string, string> courses;
         private Dictionary<string, string> cohorts;
-        private Dictionary<string, JArray> courseenrolments;
-        private Dictionary<string, JArray> cohortmembers;
+        private Dictionary<string, DataTable> courseenrolments;
+        private Dictionary<string, DataTable> cohortmembers;
 
         private List<Dictionary<string, string>> enrolgetopts;
 
-        public EnrolUsers()
+        private bool error;
+        List<Exception> exceptions;
+
+        public EnrolUsers( )
         {
             usercheck = new CheckForUser();
+            oc = new OCWebRequest();
 
             // Set required functions
             fngetcourse = "core_course_get_courses";
@@ -1101,8 +1326,9 @@ namespace moodlerest
             enrols = new List<newcourseenrol>();
             newusercourses = new Dictionary<user,List<newcourseenrol>>();
             newusercohorts = new Dictionary<user, List<newcohortenrol>>();
+            newusers = new List<user>();
             cenrols = new List<newcohortenrol>();
-            cremoves = new List<newcohortenrol>();
+            cremoves = new List<Dictionary<string,string>>();
             addroles = new List<newroles>();
             rmroles = new List<newroles>();
 
@@ -1110,10 +1336,13 @@ namespace moodlerest
 
             courses = new Dictionary<string, string>();
             cohorts = new Dictionary<string, string>();
-            courseenrolments = new Dictionary<string, JArray>();
-            cohortmembers = new Dictionary<string, JArray>();
+            courseenrolments = new Dictionary<string, DataTable>();
+            cohortmembers = new Dictionary<string, DataTable>();
 
             enrolgetopts = new List<Dictionary<string, string>>() { new Dictionary<string, string>() { { "name", "onlyactive" }, { "value", "1" } } };
+
+            error = false;
+            exceptions = new List<Exception>();
         }
 
         private async Task<bool> SendEnrolment ()
@@ -1121,31 +1350,121 @@ namespace moodlerest
             // Unassign old roles.
             if (rmroles.Count > 0)
             {
-                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnrmroles) }, { "unassignments", JToken.FromObject(rmroles) } });
+                Console.WriteLine("Unassigning removed roles");
+                try
+                {
+                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnrmroles) }, { "unassignments", JToken.FromObject(rmroles) } });
+                }
+                catch (HttpRequestException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
             }
 
             // Update course enrolments
             if (enrols.Count > 0)
             {
-                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetenrolments) }, { "enrolments", JToken.FromObject(enrols) } });
+                Console.WriteLine("Updating course enrolments");
+                try
+                {
+                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetenrolments) }, { "enrolments", JToken.FromObject(enrols) } });
+                }
+                catch (HttpRequestException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
             }
 
             // Assign new roles.
             if (addroles.Count > 0)
             {
-                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetroles) }, { "assignments", JToken.FromObject(addroles) } });
+                Console.WriteLine("Assigning new roles");
+                try
+                {
+                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetroles) }, { "assignments", JToken.FromObject(addroles) } });
+                }
+                catch (HttpRequestException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
             }
 
             // Remove old cohort enrolments
             if (cremoves.Count > 0)
             {
-                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnrmchmembers) }, { "members", JToken.FromObject(cremoves) } });
+                Console.WriteLine("Removing stale cohorts enrolments");
+                try
+                {
+                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnrmchmembers) }, { "members", JToken.FromObject(cremoves) } });
+                }
+                catch (HttpRequestException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
             }
 
             // Add new cohort enrolments
             if (cenrols.Count > 0)
             {
-                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetchmembers) }, { "members", JToken.FromObject(cenrols) } });
+                Console.WriteLine("Adding new cohort enrolments");
+                try
+                {
+                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetchmembers) }, { "members", JToken.FromObject(cenrols) } });
+                }
+                catch (HttpRequestException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
             }
 
             return true;
@@ -1156,45 +1475,66 @@ namespace moodlerest
             List<newcourseenrol> unenrols = new List<newcourseenrol>();
             List<newroles> exroles = new List<newroles>();
 
-            foreach(string course in courses.Values)
+            Console.WriteLine("Getting Enrolments without Roles");
+            DataTable dtcourses = GetUsers.MoodleODBC("SELECT Course.userid, Course.courseid FROM (SELECT mdl_user_enrolments.userid, mdl_enrol.courseid FROM mdl_course INNER JOIN (mdl_user_enrolments INNER JOIN mdl_enrol ON mdl_user_enrolments.enrolid = mdl_enrol.id) ON mdl_course.id = mdl_enrol.courseid WHERE (((mdl_user_enrolments.status)='0'))) Course LEFT JOIN (SELECT mdl_role_assignments.roleid, mdl_role_assignments.userid, mdl_context.instanceid FROM mdl_context INNER JOIN mdl_role_assignments ON mdl_context.id = mdl_role_assignments.contextid WHERE (((mdl_context.contextlevel)='50'))) Roles ON (Course.courseid = Roles.instanceid) AND (Course.userid = Roles.userid) WHERE (((Roles.roleid) Is Null))");
+
+            foreach (DataRow row in dtcourses.AsEnumerable())
             {
-                if (course != "1")
-                {
-                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fngetenrolments) }, { "options", JToken.FromObject(enrolgetopts) }, { "courseid", JToken.FromObject(course) } });
-
-                    JArray enrolments = JArray.Parse(oc.response);
-
-                    foreach (JToken enrolment in enrolments)
-                    {
-                        if (enrolment["roles"] == null || enrolment["roles"].Count() == 0 )
-                        {
-                            // User has no roles in course.
-                            if (enrolment["id"] != null)
-                            {
-                                unenrols.Add(new newcourseenrol() { userid = enrolment["id"].ToString(), courseid = course, suspend = "1", roleid = "5" });
-                                exroles.Add(new newroles() { userid = enrolment["id"].ToString(), instanceid = course, roleid = "5" });
-                            }
-                        }
-                    }
-                }
+                unenrols.Add(new newcourseenrol() { userid = row["userid"].ToString(), courseid = row["courseid"].ToString(), suspend = "1", roleid = "5" });
+                exroles.Add(new newroles() { userid = row["userid"].ToString(), instanceid = row["courseid"].ToString(), roleid = "5" });
             }
 
             if(unenrols.Count > 0)
             {
                 // Suspend user enrolments.
-                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetenrolments) }, { "enrolments", JToken.FromObject(unenrols) } });
+                try
+                {
+                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnsetenrolments) }, { "enrolments", JToken.FromObject(unenrols) } });
+                }
+                catch (HttpRequestException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+
             }
 
             if(exroles.Count > 0)
             {
                 // Remove extra roles just created.
-                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnrmroles) }, { "unassignments", JToken.FromObject(exroles) } });
+                try
+                {
+                    await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fnrmroles) }, { "unassignments", JToken.FromObject(exroles) } });
+                }
+                catch (HttpRequestException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // if there's an issue with the HTTP Request, record the error and continue with the next part of the upload. 
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
             }
 
             return true;
         }
 
-        private async Task<bool> Check (Enrolment enrolment)
+        private async Task<bool> Check (Enrolment enrolment, Boolean checkallcohorts = false)
         {
             // Check which users need creating and which course and cohort enrolments to upload
             bool courseexist = false;
@@ -1207,16 +1547,17 @@ namespace moodlerest
 
                 if (courses.Count == 0)
                 {
-                    // pull list of courses if we don't already have them.
-                    await oc.Send(new Dictionary<string, string> { { "wsfunction", fngetcourse } });
-                    JArray jcourses = JArray.Parse(oc.response);
-                    foreach (JToken course in jcourses)
+                    // Get course codes from Moodle if we haven't already.
+
+                    Console.WriteLine();
+                    Console.WriteLine("Getting Moodle Courses");
+                    DataTable dtcourses = GetUsers.MoodleODBC("SELECT shortname, id FROM mdl_course");
+                    foreach (DataRow course in dtcourses.AsEnumerable())
                     {
-                        if (course.HasValues && course["id"] != null && course["shortname"] != null)
-                        {
-                            courses.Add(course["shortname"].ToString(), course["id"].ToString());
-                        }
+                        courses.Add(course["shortname"].ToString(), course["id"].ToString());
                     }
+                    Console.WriteLine("Courses Found: " + courses.Count);
+                    Console.Write("Checking Existing Enrolments");
                 }
 
                 foreach (string course in enrolment.courses.Keys)
@@ -1233,8 +1574,9 @@ namespace moodlerest
             if (courseexist)
             {
                 //  There are relevant courses, so check to see if the user exists.
-                id = await usercheck.ExistingCheck(oc, enrolment.user);
-                if (String.IsNullOrWhiteSpace(id))
+                id = await usercheck.ExistingCheck(enrolment.user);
+
+                if (String.IsNullOrWhiteSpace(id) && !usercheck.duplicates.ContainsKey(enrolment.user))
                 {
                     if (usercheck.newusers.Contains(enrolment.user))
                     {
@@ -1258,6 +1600,11 @@ namespace moodlerest
                         {
                             // Only add user if there are enrolments to add.
 
+                            if(!newusers.Contains(enrolment.user))
+                            {
+                                newusers.Add(enrolment.user);
+                            }
+
                             if (newusercourses.ContainsKey(enrolment.user))
                             {
                                 newusercourses[enrolment.user].AddRange(userscourses);
@@ -1269,7 +1616,7 @@ namespace moodlerest
                         }
                     }
                 }
-                else
+                else if(!String.IsNullOrWhiteSpace(id))
                 {
                     // user already exists, so we just need to add the enrolments to the list to upload.
                     foreach (string course in enrolment.courses.Keys)
@@ -1279,17 +1626,21 @@ namespace moodlerest
                             if (!courseenrolments.ContainsKey(course))
                             {
                                 // if we haven't already looked up the enrolments for the course, do so.
-                                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fngetenrolments) }, { "options", JToken.FromObject(enrolgetopts) }, { "courseid", JToken.FromObject(courses[course]) } });
-                                courseenrolments.Add(course, JArray.Parse(oc.response));
+                                Console.WriteLine();
+                                Console.WriteLine("Getting Course Enrolments from Moodle for course " + course);
+                                DataTable dtenrols = GetUsers.MoodleODBC("SELECT ra.userid, ra.roleid, e.courseid FROM mdl_role_assignments ra INNER JOIN mdl_context c ON ra.contextid = c.id INNER JOIN mdl_enrol e ON c.instanceid = e.courseid INNER JOIN mdl_user_enrolments ue ON ra.userid = ue.userid AND e.id = ue.enrolid WHERE ue.status = 0 AND e.enrol = \"manual\" AND e.courseid = " + courses[course]);
+                                Console.WriteLine("Enrolments Found: " + dtenrols.Rows.Count);
+                                Console.Write("Checking Existing Enrolments");
+
+                                courseenrolments.Add(course, dtenrols);
                             }
 
                             // select user if they exist
+                            IEnumerable<string> userrole = courseenrolments[course].AsEnumerable().Where(x => x["userid"].ToString() == id).Select(y => y["roleid"].ToString()); 
 
-                            JObject userenrol = courseenrolments[course].Children<JObject>().FirstOrDefault(x => x["id"] != null && x["id"].ToString() == id);
-
-                            if (userenrol == null)
+                            if (userrole.Count() == 0)
                             {
-                                // user not enrolled in course, so add enrolments
+                                // user not enrolled in course or doesn't have any roles, so add enrolments
                                 foreach (string role in enrolment.courses[course].roles.Keys)
                                 {
                                     if (enrolment.courses[course].roles[role] == false)
@@ -1298,44 +1649,32 @@ namespace moodlerest
 
                                         if (!upduser.ContainsKey(id))
                                         {
-                                            upduser.Add(id, enrolment.user);
-                                        }
-                                    }
-                                }
-                            }
-                            else if (userenrol["roles"] == null)
-                            {
-                                // user on course, but doesn't have any roles, so add them.
-                                foreach (string role in enrolment.courses[course].roles.Keys)
-                                {
-                                    if (enrolment.courses[course].roles[role] == false)
-                                    { // ignore any suspended enrolments.
-                                        addroles.Add(new newroles() { userid = id, instanceid = courses[course], roleid = role });
-
-                                        if (!upduser.ContainsKey(id))
-                                        {
-                                            upduser.Add(id,enrolment.user);
+                                            user thisuser = enrolment.user;
+                                            thisuser.force_password_change = false;
+                                            thisuser.generate_password = false;
+                                            upduser.Add(id, thisuser);
                                         }
                                     }
                                 }
                             }
                             else
                             {
-                                JToken roles = userenrol["roles"];
                                 // user is on course with roles, so check if these need updating.
                                 foreach (string role in enrolment.courses[course].roles.Keys)
                                 {
-                                    JToken userrole = roles.FirstOrDefault(x => x["roleid"] != null && x["roleid"].ToString() == role);
                                     if (enrolment.courses[course].roles[role] == false) // not suspended
                                     {
-                                        if (userrole == null)
+                                        if (!userrole.Contains(role))
                                         {
                                             // user doesn't currently have role
                                             addroles.Add(new newroles() { userid = id, instanceid = courses[course], roleid = role });
 
                                             if (!upduser.ContainsKey(id))
                                             {
-                                                upduser.Add(id, enrolment.user);
+                                                user thisuser = enrolment.user;
+                                                thisuser.force_password_change = false;
+                                                thisuser.generate_password = false;
+                                                upduser.Add(id, thisuser);
                                             }
                                         }
                                     }
@@ -1343,7 +1682,7 @@ namespace moodlerest
                                     {
                                         if (enrolment.courses[course].roles[role] == true) // suspended
                                         {
-                                            if (userrole != null)
+                                            if (userrole.Contains(role))
                                             {
                                                 //user currently has the role
                                                 rmroles.Add(new newroles() { userid = id, instanceid = courses[course], roleid = role });
@@ -1351,13 +1690,6 @@ namespace moodlerest
                                         }
                                     }
                                 }
-
-                                if (userenrol["roles"] == null)
-                                {
-                                    // All roles removed, so unenrol.
-
-                                    enrols.Add(new newcourseenrol() { userid = id, courseid = courses[course], suspend = "1", roleid = "5" });
-                                }
                             }
                         }
                     }
@@ -1365,113 +1697,122 @@ namespace moodlerest
                 }
             }
 
-            if (enrolment.cohorts.Count > 0)
+            if (courseexist || checkallcohorts)
             {
-                // Only run if we have cohort enrolments to check.
-
-                if (cohorts.Count == 0)
+                if (enrolment.cohorts.Count > 0)
                 {
-                    await oc.Send(new Dictionary<string, string> { { "wsfunction", fngetcohorts } });
-                    JArray jcohorts = JArray.Parse(oc.response);
-                    foreach (JToken cohort in jcohorts)
+                    // Only run if we have cohort enrolments to check.
+
+                    if (cohorts.Count == 0)
                     {
-                        if (cohort.HasValues && cohort["id"] != null && cohort["idnumber"] != null)
+                        // Get cohorts from moodle if we haven't already.
+                        Console.WriteLine();
+                        Console.WriteLine("Getting Moodle Cohorts");
+                        DataTable dtcohorts = GetUsers.MoodleODBC("SELECT id, idnumber FROM mdl_cohort WHERE contextid=1");
+                        foreach (DataRow cohort in dtcohorts.AsEnumerable())
                         {
                             cohorts.Add(cohort["idnumber"].ToString(), cohort["id"].ToString());
                         }
+                        Console.WriteLine("Cohorts Found: " + cohorts.Count);
+                        Console.Write("Checking Existing Enrolments");
                     }
-                }
 
-                foreach (string cohort in enrolment.cohorts.Keys)
-                {
-                    // Check to see if any of the users courses are relevant for upload.
-                    if (cohorts.ContainsKey(cohort) && enrolment.cohorts[cohort] == false)
+                    foreach (string cohort in enrolment.cohorts.Keys)
                     {
-                        cohortexist = true;
-                        break;
-                    }
-                }
-            }
-
-            if (cohortexist)
-            {
-                // There are relevant cohorts, so see if we have already checked if this user exists, if not run check
-                if (!courseexist)
-                {
-                    id = await usercheck.ExistingCheck(oc, enrolment.user);
-                }
-
-                if (String.IsNullOrWhiteSpace(id))
-                {
-                    if (usercheck.newusers.Contains(enrolment.user))
-                    {
-                        // user needs creating, so put relevant enrolments in a holding object for now until this has been done.
-                        List<newcohortenrol> userscohorts = new List<newcohortenrol>();
-                        foreach(string cohort in enrolment.cohorts.Keys)
-                        {
-                            if(cohorts.ContainsKey(cohort) && enrolment.cohorts[cohort] == false)
-                            {
-                                userscohorts.Add(new newcohortenrol());
-                                userscohorts.Last().cohorttype.Add("value", cohorts[cohort]);
-                            }
-                        }
-
-                        if (userscohorts.Count > 0)
-                        {
-                            if (newusercohorts.ContainsKey(enrolment.user))
-                            {
-                                newusercohorts[enrolment.user].AddRange(userscohorts);
-                            }
-                            else
-                            {
-                                newusercohorts.Add(enrolment.user, userscohorts);
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    // user already exists, so check cohort membership.
-                    foreach(string cohort in enrolment.cohorts.Keys)
-                    {
+                        // Check to see if any of the users courses are relevant for upload.
                         if (cohorts.ContainsKey(cohort))
                         {
-                            if (!cohortmembers.ContainsKey(cohort))
+                            cohortexist = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (cohortexist)
+                {
+                    // There are relevant cohorts, so see if we have already checked if this user exists, if not run check
+                    if (!courseexist)
+                    {
+                        id = await usercheck.ExistingCheck(enrolment.user);
+                    }
+
+                    if (String.IsNullOrWhiteSpace(id) && !usercheck.duplicates.ContainsKey(enrolment.user))
+                    {
+                        if (usercheck.newusers.Contains(enrolment.user))
+                        {
+                            // user needs creating, so put relevant enrolments in a holding object for now until this has been done.
+                            List<newcohortenrol> userscohorts = new List<newcohortenrol>();
+                            foreach (string cohort in enrolment.cohorts.Keys)
                             {
-                                // if we haven't already looked up the membership for the cohort, do so.
-                                await oc.Send(new Dictionary<string, JToken> { { "wsfunction", JToken.FromObject(fngetchmembers) }, { "cohortids", JToken.FromObject(new List<string> { cohorts[cohort] }) } });
-                                //cohortmembers.Add(cohort, JArray.Parse(oc.response));
-                                JObject jres = JObject.Parse(oc.response);
-                                jres = jres.Children<JObject>().FirstOrDefault(x => x["cohortid"] != null && x["cohortid"].ToString() == id);
-                                JArray cmembers = new JArray();
-                                if (jres != null && jres["userids"] != null)
+                                if (cohorts.ContainsKey(cohort) && enrolment.cohorts[cohort] == false)
                                 {
-                                    cmembers.Merge(jres["userids"]);
-                                }
-                                cohortmembers.Add(cohort, cmembers);
-                            }
-
-                            // select user if they exist
-                            JObject usermembership = cohortmembers[cohort].Children<JObject>().FirstOrDefault(x => x != null && x.ToString() == id);
-
-                            if (usermembership == null && enrolment.cohorts[cohort] == false)
-                            {
-                                // Object null and cohort enrolment not deleted, so user not in cohort and needs adding.
-                                cenrols.Add(new newcohortenrol());
-                                cenrols.Last().cohorttype.Add("value", cohorts[cohort]);
-                                cenrols.Last().usertype.Add("value", id);
-
-                                if (!upduser.ContainsKey(id))
-                                {
-                                    upduser.Add(id,enrolment.user);
+                                    userscohorts.Add(new newcohortenrol());
+                                    userscohorts.Last().cohorttype.Add("value", cohorts[cohort]);
                                 }
                             }
-                            else if (usermembership != null && enrolment.cohorts[cohort] == true)
+
+                            if (userscohorts.Count > 0)
                             {
-                                // Object not null and cohort enrolment deleted, so user is in cohort and needs removing.
-                                cremoves.Add(new newcohortenrol());
-                                cremoves.Last().cohorttype.Add("value", cohorts[cohort]);
-                                cremoves.Last().usertype.Add("value", id);
+                                if (!newusers.Contains(enrolment.user))
+                                {
+                                    newusers.Add(enrolment.user);
+                                }
+
+                                if (newusercohorts.ContainsKey(enrolment.user))
+                                {
+                                    newusercohorts[enrolment.user].AddRange(userscohorts);
+                                }
+                                else
+                                {
+                                    newusercohorts.Add(enrolment.user, userscohorts);
+                                }
+                            }
+                        }
+                    }
+                    else if(!String.IsNullOrWhiteSpace(id))
+                    {
+                        // user already exists, so check cohort membership.
+                        foreach (string cohort in enrolment.cohorts.Keys)
+                        {
+                            if (cohorts.ContainsKey(cohort))
+                            {
+                                if (!cohortmembers.ContainsKey(cohort))
+                                {
+                                    // if we haven't already looked up the membership for the cohort, do so.
+                                    Console.WriteLine();
+                                    Console.WriteLine("Getting Cohort Enrolments from Moodle for cohort " + cohort);
+                                    DataTable cmembers = GetUsers.MoodleODBC("SELECT m.userid FROM mdl_cohort_members m WHERE m.cohortid = " + cohorts[cohort]);
+                                    Console.WriteLine("Enrolments Found: " + cmembers.Rows.Count);
+                                    Console.Write("Checking Existing Enrolments");
+                                    cohortmembers.Add(cohort, cmembers);
+                                }
+
+                                // select user if they exist
+                                IEnumerable<DataRow> usermembership = cohortmembers[cohort].AsEnumerable().Where(x => x["userid"].ToString() == id);
+                                int membcount = usermembership.Count();
+
+                                if (membcount == 0 && enrolment.cohorts[cohort] == false)
+                                {
+                                    // Object null and cohort enrolment not deleted, so user not in cohort and needs adding.
+                                    newcohortenrol newcenrol = new newcohortenrol();
+                                    newcenrol.cohorttype.Add("value", cohorts[cohort]);
+                                    newcenrol.usertype.Add("value", id);
+
+                                    cenrols.Add(newcenrol);
+
+                                    if (!upduser.ContainsKey(id))
+                                    {
+                                        user thisuser = enrolment.user;
+                                        thisuser.force_password_change = false;
+                                        thisuser.generate_password = false;
+                                        upduser.Add(id, thisuser);
+                                    }
+                                }
+                                else if (membcount > 0 && enrolment.cohorts[cohort] == true)
+                                {
+                                    // Object not null and cohort enrolment deleted, so user is in cohort and needs removing.
+                                    cremoves.Add(new Dictionary<string,string>{{"cohortid", cohorts[cohort].ToString()},{"userid", id.ToString()}});
+                                }
                             }
                         }
                     }
@@ -1481,74 +1822,298 @@ namespace moodlerest
             return true;
         }
 
-        public async Task<bool> Sync (List<Enrolment> enrolments)
+        public async Task<bool> Sync (List<Enrolment> enrolments, Boolean addnewusers=false, Boolean includecohortonlyenrols=false, String uidfield = "")
         {
+            Console.Write("Checking Existing Enrolments");
             foreach (Enrolment enrolment in enrolments)
             {
                 // Check which enrolments need creating.
-                await this.Check(enrolment);
-            }
-
-            // Create new users.
-            CreateUsers newusers = new CreateUsers();
-            newusers.oc = oc;
-            newusers.geouser = geouser;
-            newusers.geopass = geopass;
-            List<user> addusers = newusercourses.Keys.ToList();
-            addusers.AddRange(newusercohorts.Keys.Where(p2 => addusers.All(p1 => !p1.Equals(p2))).ToList());
-
-            if (addusers.Count > 0)
-            {
-                await newusers.AddUser(addusers);
-                await newusers.Send();
-
-                foreach (user newuser in addusers)
+                try
                 {
-                    // Get generated id for each new user
-                    string id = await usercheck.ExistingCheck(oc, newuser);
-                    if (!String.IsNullOrWhiteSpace(id))
-                    {
-                        if (newusercourses.ContainsKey(newuser))
-                        {
-                            // If there are courses for that user add them.
-                            foreach (newcourseenrol course in newusercourses[newuser])
-                            {
-                                enrols.Add(course);
-                                enrols.Last().userid = id;
-                            }
-                        }
+                    await this.Check(enrolment, includecohortonlyenrols);
+                    Console.Write(".");
+                }
+                catch (HttpRequestException e)
+                {
+                    // Communication error during check, so record error and skip to next enrolment
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (TaskCanceledException e)
+                {
+                    // Comms error while adding new users, so record error and continue with existing users only
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Timeout");
+                }
+            }
+            Console.Write("Done"+System.Environment.NewLine);
 
-                        if (newusercohorts.ContainsKey(newuser))
+            Console.Write("Creating Tickets for Duplicates");
+            foreach (user dupuser in usercheck.duplicates.Keys)
+            {
+                // For each duplicate user, create a new ticket with details of the errors that occured.
+                string subject = "Duplicate User ";
+                if(!string.IsNullOrWhiteSpace(dupuser.firstname))
+                {
+                    subject += dupuser.firstname + " ";
+                }
+                if(!string.IsNullOrWhiteSpace(dupuser.lastname))
+                {
+                    subject += dupuser.lastname + " ";
+                }
+                subject += "(";
+                bool comma = false;
+                if(!string.IsNullOrWhiteSpace(dupuser.candidate_number))
+                {
+                    subject += dupuser.candidate_number;
+                    comma = true;
+                }
+                if(!string.IsNullOrWhiteSpace(dupuser.sapcustomernumber))
+                {
+                    if(comma)
+                    {
+                        subject += ",";
+                    }
+                    subject += dupuser.sapcustomernumber;
+                    comma = true;
+                }
+                if(!string.IsNullOrWhiteSpace(dupuser.sapsuppliernumber))
+                {
+                    if(comma)
+                    {
+                        subject += ",";
+                    }
+                    subject += dupuser.sapsuppliernumber;
+                }
+                subject += ")";
+
+                string message = subject + System.Environment.NewLine + System.Environment.NewLine;
+
+                message += "Errors:" + System.Environment.NewLine + usercheck.duplicates[dupuser].ToString();
+
+                CreateNewTicket otrs = new CreateNewTicket();
+
+                try
+                {
+                    await otrs.CreateTicketAsync(subject, message, Customer: otrssettings.customer, Queue: otrssettings.dupqueue);
+                }
+                catch (HttpException)
+                {
+                    //unable to create ticket so print to screen
+                    Console.WriteLine("Unable to create ticket");
+                    Console.WriteLine("Subject: " + subject);
+                    Console.WriteLine("Message:");
+                    Console.Write(message);
+                    Console.WriteLine("");
+                }
+                catch (TaskCanceledException)
+                {
+                    //unable to create ticket so print to screen
+                    Console.WriteLine("Unable to create ticket");
+                    Console.WriteLine("Subject: " + subject);
+                    Console.WriteLine("Message:");
+                    Console.Write(message);
+                    Console.WriteLine("");
+                }
+
+                Console.Write(".");
+            }
+            Console.Write("Done" + System.Environment.NewLine);
+
+            if (addnewusers)
+            {
+                // Create new users.
+                try
+                {
+                    CreateUsers addusers = new CreateUsers();
+
+                    Console.WriteLine("Checking Enrolments for New Users");
+                    if (newusers.Count > 0)
+                    {
+                        await addusers.AddUser(newusers, uidfield);
+                        await addusers.Send();
+                        Console.WriteLine("New Users: " + newusers.Count);
+
+                        CheckForUser addusercheck = new CheckForUser();
+
+                        Console.WriteLine("Processing Course & Cohort Enrolments for New Users");
+                        // Add courses for new users
+                        foreach (user newuser in newusers)
                         {
-                            // If there are cohorts for that user add them.
-                            foreach (newcohortenrol cohort in newusercohorts[newuser])
+                            // Get generated id for each new user
+                            string id = await addusercheck.ExistingCheck(newuser);
+                            if (!String.IsNullOrWhiteSpace(id))
                             {
-                                cenrols.Add(cohort);
-                                cenrols.Last().usertype.Add("value", id);
+                                if (newusercourses.ContainsKey(newuser))
+                                {
+                                    // If there are courses for that user add them.
+                                    foreach (newcourseenrol course in newusercourses[newuser])
+                                    {
+                                        enrols.Add(course);
+                                        enrols.Last().userid = id;
+                                    }
+                                }
+
+                                if (newusercohorts.ContainsKey(newuser))
+                                {
+                                    // If there are cohorts for that user add them.
+                                    foreach (newcohortenrol cohort in newusercohorts[newuser])
+                                    {
+                                        cenrols.Add(cohort);
+                                        cenrols.Last().usertype.Add("value", id);
+                                    }
+                                }
                             }
+                            Console.Write(".");
                         }
                     }
-
                 }
+                catch (HttpRequestException e)
+                {
+                    // Comms error while adding new users, so record error and continue with existing users only
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (WebException e)
+                {
+                    // Comms error while adding new users, so record error and continue with existing users only
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Error");
+                }
+                catch (TaskCanceledException e)
+                {
+                    // Comms error while adding new users, so record error and continue with existing users only
+                    error = true;
+                    exceptions.Add(e);
+                    Console.WriteLine("Communications Timeout");
+                }
+            }
+            else
+            {
+                Console.WriteLine("New Users Needing Creation: " + newusers.Count);
             }
 
             // Update existing users
-            if (upduser.Count > 0)
+            try
             {
-                UpdateUsers update = new UpdateUsers();
-                update.oc = oc;
-                update.geouser = geouser;
-                update.geopass = geopass;
-                await update.AddUser(upduser);
-                await update.Send();
+                if (upduser.Count > 0)
+                {
+                    UpdateUsers update = new UpdateUsers();
+                    await update.AddUser(upduser);
+                    await update.Send();
+                }
+            }
+            catch(HttpRequestException e)
+            {
+                // Comms error while updating users, so record error and continue with enrolments
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Error");
+            }
+            catch (WebException e)
+            {
+                // Comms error while updating users, so record error and continue with enrolments
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Error");
+            }
+            catch (TaskCanceledException e)
+            {
+                // Comms error while adding new users, so record error and continue with existing users only
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Timeout");
             }
             
 
             // Send enrolment updates.
-            await this.SendEnrolment();
+            try
+            {
+                await this.SendEnrolment();
+            }
+            catch (HttpRequestException e)
+            {
+                // Comms errors should be picked up within SendEnrolment() itself, but if any make it here record them and continue on to next part of upload.
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Error");
+            }
+            catch (WebException e)
+            {
+                // Comms error while updating users, so record error and continue with enrolments
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Error");
+            }
+            catch (TaskCanceledException e)
+            {
+                // Comms error while adding new users, so record error and continue with existing users only
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Timeout");
+            }
 
             // Unenrol users without roles.
-            await this.Unenrolnoroll();
+            try
+            {
+                Console.WriteLine("Tidying Up");
+                await this.Unenrolnoroll();
+            }
+            catch (HttpRequestException e)
+            {
+                // Comms error while unenrolling, so record error and continue to report.
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Error");
+            }
+            catch (WebException e)
+            {
+                // Comms error while updating users, so record error and continue with enrolments
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Error");
+            }
+            catch (TaskCanceledException e)
+            {
+                // Comms error while adding new users, so record error and continue with existing users only
+                error = true;
+                exceptions.Add(e);
+                Console.WriteLine("Communications Timeout");
+            }
+
+            if (error)
+            {
+                // if we have errors send details to OTRS
+                string errsubject = "Errors during upload";
+                string errmessage = JArray.FromObject(exceptions).ToString();
+
+                CreateNewTicket otrs = new CreateNewTicket();
+
+                Console.WriteLine("Upload had errors - please see ticketing");
+
+                try
+                {
+                    await otrs.CreateTicketAsync(errsubject, errmessage, Customer: otrssettings.customer, Queue: otrssettings.errqueue);
+                }
+                catch (TaskCanceledException)
+                {
+                    //unable to create ticket so print to screen
+                    Console.WriteLine("Unable to create ticket");
+                    Console.WriteLine("Subject: " + errsubject);
+                    Console.WriteLine("Message:");
+                    Console.Write(errmessage);
+                    Console.WriteLine("");
+                }
+            }
+            else 
+            {
+                Console.WriteLine("Upload successful");
+                Console.WriteLine("Completed at " + DateTime.Now.ToString());
+            }
 
             return true;
         }
@@ -1578,11 +2143,22 @@ namespace moodlerest
         {
             moodle = new HttpClient();
             httpresponse = new HttpResponseMessage();
+
+            // Get default base address and token from saved properties
+            moodle.BaseAddress = new Uri(Properties.moodlerest.Default.MoodleBase);
+            if (!string.IsNullOrWhiteSpace(Properties.moodlerest.Default.MoodleToken))
+            {
+                byte[] enc = System.Convert.FromBase64String(Properties.moodlerest.Default.MoodleToken);
+                byte[] entropy = System.Convert.FromBase64String(Properties.moodlerest.Default.MEntropy);
+                byte[] unenc = ProtectedData.Unprotect(enc, entropy, DataProtectionScope.CurrentUser);
+                _token = Encoding.Unicode.GetString(unenc);
+            }
         }
 
         // Request() method runs the REST request returning the HttpStatusCode 
         public async Task<HttpStatusCode> Send<T>(T request)
         {
+            JToken responsejson;
             // Build uri from base request and resource and add username and password to query string.
             resourceuri = new UriBuilder(moodle.BaseAddress);
             querystring = HttpUtility.ParseQueryString(resourceuri.Query);
@@ -1591,23 +2167,182 @@ namespace moodlerest
 
             resourceuri.Query = querystring.ToString();
 
-            // Send REST request to OTRS.
-            httpresponse = await moodle.PostAsJsonAsync(resourceuri.Uri.ToString(), request);
+            short retries = 0;
 
-            // Process response.
-            response = await httpresponse.Content.ReadAsStringAsync();
+            while (true)
+            {
+                try
+                {
+                    // Send REST request to OTRS.
+                    httpresponse = await moodle.PostAsJsonAsync(resourceuri.Uri.ToString(), request);
+                    httpresponse.EnsureSuccessStatusCode();
+
+                    // Process response.
+                    response = await httpresponse.Content.ReadAsStringAsync();
+
+                    responsejson = null;
+                    try
+                    {
+                        responsejson = JToken.Parse(response);
+
+                        if (responsejson.SelectToken("exception") != null && !String.IsNullOrWhiteSpace(responsejson.SelectToken("exception").ToString()))
+                        {
+                            // Error, so check if we should retry
+                            retries++;
+                            Console.WriteLine("Connection error");
+                            if (retries > 2) break;
+                            Console.WriteLine("Retry " + retries);
+                            continue;
+                        }
+                    }
+                    catch(JsonReaderException e)
+                    {
+                        // Log HTTP Request errors to OTRS and then re-throw for calling function to handle fallbacks.
+
+                        CreateNewTicket otrs = new CreateNewTicket();
+                        string subject = "Moodle REST Library:  Error Communicating with Moodle";
+                        string message = "Error communicating with Moodle (Invalid JSON Response)" + System.Environment.NewLine + System.Environment.NewLine;
+
+                        message += "Exception: " + e.Message + System.Environment.NewLine + System.Environment.NewLine;
+
+                        message += "HTTP Response Status: " + httpresponse.StatusCode.ToString() + " " + httpresponse.ReasonPhrase + System.Environment.NewLine + System.Environment.NewLine;
+
+                        message += "Request: " + System.Environment.NewLine + JToken.FromObject(request).ToString() + System.Environment.NewLine + System.Environment.NewLine;
+
+                        message += "Response Headers: " + System.Environment.NewLine + string.Join(System.Environment.NewLine, httpresponse.Headers.Select(x => "\t" + x.Key + "=" + String.Join(Environment.NewLine,x.Value))) + System.Environment.NewLine + System.Environment.NewLine;
+
+                        try
+                        {
+                            otrs.CreateTicket(subject, message, Customer: otrssettings.customer, Queue: otrssettings.errqueue);
+                        }
+                        catch (TaskCanceledException)
+                        {
+                            //unable to create ticket so print to screen
+                            Console.WriteLine("Unable to create ticket");
+                            Console.WriteLine("Subject: " + subject);
+                            Console.WriteLine("Message:");
+                            Console.Write(message);
+                            Console.WriteLine("");
+                        }
+
+
+                        System.Diagnostics.Debug.WriteLine(message);
+                    }
+
+                    break;
+                }
+                catch (HttpRequestException e)
+                {
+                    // Log HTTP Request errors to OTRS and then re-throw for calling function to handle fallbacks.
+
+                    CreateNewTicket otrs = new CreateNewTicket();
+                    string subject = "Moodle REST Library:  Error Communicating with Moodle";
+                    string message = "Error communicating with Moodle" + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "Exception: " + e.Message + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "HTTP Response Status: " + httpresponse.StatusCode.ToString() + " " + httpresponse.ReasonPhrase + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "Request: " + System.Environment.NewLine + JToken.FromObject(request).ToString() + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "Response Headers: " + System.Environment.NewLine + string.Join(System.Environment.NewLine, httpresponse.Headers.Select(x => "\t" + x.Key + "=" + x.Value)) + System.Environment.NewLine + System.Environment.NewLine;
+
+                    try
+                    {
+                        otrs.CreateTicket(subject, message, Customer: otrssettings.customer, Queue: otrssettings.errqueue);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        //unable to create ticket so print to screen
+                        Console.WriteLine("Unable to create ticket");
+                        Console.WriteLine("Subject: " + subject);
+                        Console.WriteLine("Message:");
+                        Console.Write(message);
+                        Console.WriteLine("");
+                    }
+                    
+
+                    System.Diagnostics.Debug.WriteLine(message);
+
+                    throw e;
+                }
+                catch(TaskCanceledException)
+                {
+                    // Connection timed out, so check if we should retry
+                    retries++;
+                    Console.WriteLine("Connection timeout");
+                    if (retries > 2) throw;
+                    Console.WriteLine("Retry " + retries);
+                }
+            }
+
+            if(!String.IsNullOrWhiteSpace(response) && response != "null")
+            {
+                // Check response for errors and warnings - setup a ticket in case we need one.
+
+
+                CreateNewTicket otrs = new CreateNewTicket();
+                bool responseticket = false;
+                string subject = "Moodle REST Library: REST Webservice Error";
+                string message = "";
+                if (responsejson.SelectToken("exception") != null && !String.IsNullOrWhiteSpace(responsejson.SelectToken("exception").ToString()))
+                {
+                    // There is an error, so setup a ticket for it
+                    responseticket = true;
+                    subject = "Moodle REST Library:  REST Webservice Error";
+                    message = "REST Errors Detected" + System.Environment.NewLine + System.Environment.NewLine;
+                    message += "Payload:" + System.Environment.NewLine + JToken.FromObject(request).ToString() + System.Environment.NewLine + System.Environment.NewLine;
+                    message += "Response:" + System.Environment.NewLine + responsejson.ToString();
+                }
+                else if(responsejson.SelectToken("warnings") != null && responsejson.SelectToken("warnings").AsEnumerable().Count() > 0)
+                {
+                    // There is a warning, so setup a ticket for it
+                    responseticket = true;
+                    subject = "Moodle REST Library:  REST Webservice Warning";
+                    message = "REST Warnings Detected" + System.Environment.NewLine + System.Environment.NewLine;
+                    message += "Payload:" + System.Environment.NewLine + JToken.FromObject(request).ToString() + System.Environment.NewLine + System.Environment.NewLine;
+                    message += "Response:" + System.Environment.NewLine + responsejson.ToString();
+                }
+
+
+                if(responseticket) 
+                {
+                    // If we had an error or warning and setup a ticket, then send it to OTRS.
+                    try
+                    {
+                        otrs.CreateTicket(subject, message, Customer: otrssettings.customer, Queue: otrssettings.errqueue);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        //unable to create ticket so print to screen
+                        Console.WriteLine("Unable to create ticket");
+                        Console.WriteLine("Subject: " + subject);
+                        Console.WriteLine("Message:");
+                        Console.Write(message);
+                        Console.WriteLine("");
+                    }
+                }
+            }
 
             // Return the HTTP Status Code.
             return httpresponse.StatusCode;
         }
     }
 
-    public static class Username
+    public class Username
     {
+        private Dictionary<string, int> genusernames;
+
+        public Username() 
+        {
+            genusernames = new Dictionary<string, int>();
+        }
+
         // Static class for generating usernames.
-        public static async Task<String> Generate ( OCWebRequest moodle, string usernameprefix )
+        public async Task<String> Generate ( string usernameprefix)
         {
             // generate username.
+            OCWebRequest moodle = new OCWebRequest();
             lkupidnumber userlookup;
             Regex usernamergx;
             JToken jsonresponse;
@@ -1615,6 +2350,7 @@ namespace moodlerest
             int suffix;
             string newsuffix;
             string returnval;
+            
  
             // Remove whitespace and convert usernameprefix to lowercase
             
@@ -1626,28 +2362,38 @@ namespace moodlerest
             usernamergx = new Regex("[^-\\._a-z0-9]");
             usernameprefix = usernamergx.Replace(usernameprefix, String.Empty);
 
-            // Lookup any users currently with that prefix.
-            userlookup = new lkupidnumber();
-            userlookup.criteria.Add(new lkcriteria() { key = "username", value = usernameprefix + "%" });
-
-            await moodle.Send(userlookup);
-
-
-            // Process response into JToken object.
-            jsonresponse = JToken.Parse(moodle.response);
-            jsonresponse = jsonresponse["users"];
-
-
             // Transfer suffixes from ends of usernames to new List.
             suffixes = new List<int>();
 
-            if (jsonresponse.HasValues)
+            if (genusernames.ContainsKey(usernameprefix))
             {
-                foreach(JToken user in jsonresponse.Children())
+                suffixes.Add(genusernames[usernameprefix]);
+            }
+            else
+            {
+                // Lookup any users currently with that prefix.
+                userlookup = new lkupidnumber();
+                userlookup.criteria.Add(new lkcriteria() { key = "username", value = usernameprefix + "%" });
+
+                await moodle.Send(userlookup);
+
+
+                // Process response into JToken object.
+                jsonresponse = JToken.Parse(moodle.response);
+                if (jsonresponse["users"] != null)
                 {
-                    if (int.TryParse(user["username"].ToString().Substring(usernameprefix.Length), out suffix)) 
+                    jsonresponse = jsonresponse["users"];
+
+
+                    if (jsonresponse.HasValues)
                     {
-                        suffixes.Add(suffix);
+                        foreach (JToken user in jsonresponse.Children())
+                        {
+                            if (int.TryParse(user["username"].ToString().Substring(usernameprefix.Length), out suffix))
+                            {
+                                suffixes.Add(suffix);
+                            }
+                        }
                     }
                 }
             }
@@ -1658,11 +2404,13 @@ namespace moodlerest
                 // find next number
                 newsuffix = (suffixes.Max() + 1).ToString("D2"); // new suffix string with required leading zeros as necessary.
                 returnval = usernameprefix + newsuffix;
+                genusernames[usernameprefix] = suffixes.Max() + 1;
             }
             else
             {
                 // else start at 01.
                 returnval = usernameprefix + "01";
+                genusernames[usernameprefix] = 1;
             }
 
             return returnval;
@@ -1697,6 +2445,15 @@ namespace moodlerest
             geonamehttp = new HttpClient();
             geonamehttp.BaseAddress = new Uri("http://api.geonames.org/");
             httpresponse = new HttpResponseMessage();
+
+            username = Properties.moodlerest.Default.GeoUser;
+            if (!string.IsNullOrWhiteSpace(Properties.moodlerest.Default.GeoPass))
+            {
+                byte[] enc = System.Convert.FromBase64String(Properties.moodlerest.Default.GeoPass);
+                byte[] entropy = System.Convert.FromBase64String(Properties.moodlerest.Default.GEntropy);
+                byte[] unenc = ProtectedData.Unprotect(enc, entropy, DataProtectionScope.CurrentUser);
+                _password = Encoding.Unicode.GetString(unenc);
+            }
         }
 
         // Request() method runs the REST request returning the HttpStatusCode 
@@ -1713,11 +2470,63 @@ namespace moodlerest
 
             resourceuri.Query = querystring.ToString();
 
-            // Send REST request to OTRS.
-            httpresponse = await geonamehttp.GetAsync(resourceuri.Uri);
+            short retries = 0;
 
-            // Process response.
-            response = await httpresponse.Content.ReadAsStringAsync();
+            // Send REST request to OTRS.
+            while (true)
+            {
+                try
+                {
+                    httpresponse = await geonamehttp.GetAsync(resourceuri.Uri);
+                    httpresponse.EnsureSuccessStatusCode();  // Throw exception if not a success code.
+
+                    // Process response.
+                    response = await httpresponse.Content.ReadAsStringAsync();
+                    break;
+                }
+                catch (HttpRequestException e)
+                {
+                    // Log HTTP Request errors to OTRS and then re-throw for calling function to handle fallbacks.
+
+                    CreateNewTicket otrs = new CreateNewTicket();
+                    string subject = "Moodle REST Library:  Error Communicating with Geonames";
+                    string message = "Error communicating with Geonames" + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "Exception: " + e.Message + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "HTTP Response Status: " + httpresponse.StatusCode.ToString() + " " + httpresponse.ReasonPhrase + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "Request: " + System.Environment.NewLine + string.Join(System.Environment.NewLine, request.AllKeys.Select(x => "\t" + x + "=" + request[x])) + System.Environment.NewLine + System.Environment.NewLine;
+
+                    message += "Response Headers: " + System.Environment.NewLine + string.Join(System.Environment.NewLine, httpresponse.Headers.Select(x => "\t" + x.Key + "=" + x.Value)) + System.Environment.NewLine + System.Environment.NewLine;
+
+                    try
+                    {
+                        otrs.CreateTicket(subject, message, Customer: otrssettings.customer, Queue: otrssettings.errqueue);
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        //unable to create ticket so print to screen
+                        Console.WriteLine("Unable to create ticket");
+                        Console.WriteLine("Subject: " + subject);
+                        Console.WriteLine("Message:");
+                        Console.Write(message);
+                        Console.WriteLine("");
+                    }
+
+                    System.Diagnostics.Debug.WriteLine(message);
+
+                    throw e;
+                }
+                catch (TaskCanceledException)
+                {
+                    // Connection timed out, so check if we should retry
+                    retries++;
+                    Console.WriteLine("Connection timeout");
+                    if (retries > 2) throw;
+                    Console.WriteLine("Retry " + retries);
+                }
+            }
 
             // Return the HTTP Status Code.
             return httpresponse.StatusCode;
@@ -1727,7 +2536,7 @@ namespace moodlerest
     public static class timezone
     {
         // static class for looking up timezones.
-        public static async Task<string> Lookup (string city, string country, string username, string password, double fuzzy = 0.8)
+        public static async Task<string> Lookup (string city, string country, double fuzzy = 0.8)
         {
             geonames gnsearch = new geonames();
             geonames tzlookup = new geonames();
@@ -1735,12 +2544,8 @@ namespace moodlerest
 
             // Setup geonames data.
             gnsearch.resource = "searchJSON";
-            gnsearch.username = username;
-            gnsearch.password = password;
 
             tzlookup.resource = "timezoneJSON";
-            tzlookup.username = username;
-            tzlookup.password = password;
 
             if (!String.IsNullOrWhiteSpace(city))
             {
@@ -1753,42 +2558,52 @@ namespace moodlerest
                 search["fuzzy"] = fuzzy.ToString();
                 search["orderby"] = "relevance";
 
-                await gnsearch.Send(search);
+                try { 
+                    await gnsearch.Send(search);
 
-                JObject searchresults = JObject.Parse(gnsearch.response);
+                    JObject searchresults = JObject.Parse(gnsearch.response);
 
-                int noresults;
+                    int noresults;
 
-                // Process results.
-                if (searchresults["totalResultsCount"] != null && Int32.TryParse(searchresults["totalResultsCount"].ToString(), out noresults))
-                {
-                    if (noresults > 0 && searchresults["geonames"] != null)
+                    // Process results.
+                    if (searchresults["totalResultsCount"] != null && Int32.TryParse(searchresults["totalResultsCount"].ToString(), out noresults))
                     {
-                        // Check to see if there are results.
-
-                        foreach (JToken place in searchresults["geonames"].Children())
+                        if (noresults > 0 && searchresults["geonames"] != null)
                         {
-                            if (place["lat"] != null && place["lng"] != null)
+                            // Check to see if there are results.
+
+                            foreach (JToken place in searchresults["geonames"].Children())
                             {
-                                NameValueCollection timezoneloc = new NameValueCollection();
-
-                                // Lookup timezone from lat/lng figures for current result from geonames search.
-
-                                timezoneloc["lat"] = place["lat"].ToString();
-                                timezoneloc["lng"] = place["lng"].ToString();
-
-                                await tzlookup.Send(timezoneloc);
-
-                                JObject timezonedata = JObject.Parse(tzlookup.response);
-
-                                if (timezonedata["timezoneId"] != null)
+                                if (place["lat"] != null && place["lng"] != null)
                                 {
-                                    returntimezone = timezonedata["timezoneId"].ToString();
-                                    break;  // If we've found a timezone stop.  Otherwise continue loop with next result.
+                                    NameValueCollection timezoneloc = new NameValueCollection();
+
+                                    // Lookup timezone from lat/lng figures for current result from geonames search.
+
+                                    timezoneloc["lat"] = place["lat"].ToString();
+                                    timezoneloc["lng"] = place["lng"].ToString();
+
+                                    await tzlookup.Send(timezoneloc);
+
+                                    JObject timezonedata = JObject.Parse(tzlookup.response);
+
+                                    if (timezonedata["timezoneId"] != null)
+                                    {
+                                        returntimezone = timezonedata["timezoneId"].ToString();
+                                        break;  // If we've found a timezone stop.  Otherwise continue loop with next result.
+                                    }
                                 }
                             }
                         }
                     }
+                }
+                catch (HttpRequestException)
+                {
+                    // Ignore HTTP Request exceptions as we'll be trying another HTTP Request below and will have already logged these in the geonames.Send function.
+                }
+                catch (TaskCanceledException)
+                {
+                    // Ignore timeouts
                 }
             }
 
@@ -1798,20 +2613,31 @@ namespace moodlerest
                 geonames capitallookup = new geonames();
 
                 capitallookup.resource = "countryInfoJSON";
-                capitallookup.username = username;
-                capitallookup.password = password;
 
                 NameValueCollection countryinfo = new NameValueCollection();
 
                 countryinfo["country"] = country;
 
-                await capitallookup.Send(countryinfo);
+                try
+                {
+                    await capitallookup.Send(countryinfo);
 
-                JObject capitalresults = JObject.Parse(capitallookup.response);
+                    JObject capitalresults = JObject.Parse(capitallookup.response);
 
-                if(capitalresults["geonames"] != null && capitalresults["geonames"].HasValues && capitalresults["geonames"].First()["capital"] != null && capitalresults["geonames"].First()["capital"].ToString() != city) {
-                    // Try again with countries capital if it's different to the location just searched.
-                    returntimezone = await timezone.Lookup(capitalresults["geonames"].First()["capital"].ToString(),country,username,password);
+                    if (capitalresults["geonames"] != null && capitalresults["geonames"].HasValues && capitalresults["geonames"].First()["capital"] != null && capitalresults["geonames"].First()["capital"].ToString() != city)
+                    {
+                        // Try again with countries capital if it's different to the location just searched.
+                        returntimezone = await timezone.Lookup(capitalresults["geonames"].First()["capital"].ToString(), country);
+                    }
+                }
+                catch (HttpRequestException)
+                {
+                    // Ignore HTTP Request exceptions as we will have already logged these in the geonames.Send function.
+                    // Default value for timezone will be set below.
+                }
+                catch (TaskCanceledException)
+                {
+                    // Ignore timeouts and use default value as set below.
                 }
             }
 

@@ -5,9 +5,9 @@ VisualStudioVersion = 12.0.21005.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "moodlerest", "moodlerest.csproj", "{A8C32B1D-EAC7-46A4-B82E-80DCDB33A4A9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowsFormsApplication1", "..\WindowsFormsApplication1\WindowsFormsApplication1.csproj", "{D6D74828-7AB1-428F-B560-97E6A59ACEFE}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "otrsrest", "..\otrsrest\otrsrest.csproj", "{29E77EE1-9588-4F32-8F97-22EEEC879DD5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "moodleressettings", "..\moodlerestsettings\moodleressettings.csproj", "{A485F945-B02A-4E4F-AA98-ACC5F330A97A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -34,18 +34,6 @@ Global
 		{A8C32B1D-EAC7-46A4-B82E-80DCDB33A4A9}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A8C32B1D-EAC7-46A4-B82E-80DCDB33A4A9}.Release|x64.ActiveCfg = Release|Any CPU
 		{A8C32B1D-EAC7-46A4-B82E-80DCDB33A4A9}.Release|x86.ActiveCfg = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.32-bit|Any CPU.ActiveCfg = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.32-bit|Any CPU.Build.0 = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.32-bit|x64.ActiveCfg = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.32-bit|x86.ActiveCfg = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Release|x64.ActiveCfg = Release|Any CPU
-		{D6D74828-7AB1-428F-B560-97E6A59ACEFE}.Release|x86.ActiveCfg = Release|Any CPU
 		{29E77EE1-9588-4F32-8F97-22EEEC879DD5}.32-bit|Any CPU.ActiveCfg = 32-bit|Any CPU
 		{29E77EE1-9588-4F32-8F97-22EEEC879DD5}.32-bit|Any CPU.Build.0 = 32-bit|Any CPU
 		{29E77EE1-9588-4F32-8F97-22EEEC879DD5}.32-bit|x64.ActiveCfg = 32-bit|x64
@@ -64,6 +52,18 @@ Global
 		{29E77EE1-9588-4F32-8F97-22EEEC879DD5}.Release|x64.Build.0 = Release|x64
 		{29E77EE1-9588-4F32-8F97-22EEEC879DD5}.Release|x86.ActiveCfg = Release|x86
 		{29E77EE1-9588-4F32-8F97-22EEEC879DD5}.Release|x86.Build.0 = Release|x86
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.32-bit|Any CPU.ActiveCfg = Release|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.32-bit|Any CPU.Build.0 = Release|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.32-bit|x64.ActiveCfg = Release|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.32-bit|x86.ActiveCfg = Release|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Release|x64.ActiveCfg = Release|Any CPU
+		{A485F945-B02A-4E4F-AA98-ACC5F330A97A}.Release|x86.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

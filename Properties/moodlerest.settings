@@ -1,0 +1,51 @@
+﻿<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="moodlerest.Properties" GeneratedClassName="moodlerest">
+  <Profiles />
+  <Settings>
+    <Setting Name="MoodleBase" Type="System.String" Scope="User">
+      <Value Profile="(Default)">http://path.to/moodle/webservice/restjson/server.php</Value>
+    </Setting>
+    <Setting Name="MoodleToken" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="GeoUser" Type="System.String" Scope="User">
+      <Value Profile="(Default)">demo</Value>
+    </Setting>
+    <Setting Name="GeoPass" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="MEntropy" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="GEntropy" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="ErrQueue" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="DupQueue" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="OTRSCustomer" Type="System.String" Scope="User">
+      <Value Profile="(Default)">moodlerest</Value>
+    </Setting>
+    <Setting Name="DBServer" Type="System.String" Scope="User">
+      <Value Profile="(Default)">moodle.db</Value>
+    </Setting>
+    <Setting Name="DBUser" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="DBPass" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="DBEntropy" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="Database" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+    <Setting Name="DBPort" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
+    </Setting>
+  </Settings>
+</SettingsFile>
